@@ -407,7 +407,27 @@ if menu == "Registrar Jornada":
             else:
                 st.info("ℹ️ No hay registros de jornada para editar.")
         st.markdown('</div>', unsafe_allow_html=True)
+# FORMULARIO DE ABONADO
+if menu == "Registrar Abono":
+    st.subheader("🌿 Registrar Aplicación de Abono")
+    with st.form("form_abonado"):
+        fecha_abono = st.date_input("Fecha de aplicación de abono", datetime.date.today())
+        lote_abono = st.selectbox("Lote o parcela", LOTE_LISTA)
+        etapa = st.selectbox("Etapa de abonado", ETAPAS_ABONO)
+        producto = st.text_input("Nombre del producto (ej: 18-5-15, Multimag)")
+        dosis = st.number_input("Dosis aplicada (en gramos por planta)", min_value=0.0, step=0.1)
+        cantidad = st.number_input("Cantidad aplicada (en sacos)", min_value=0.0, step=0.5)
+        precio_unitario = st.number_input("Precio por saco (₡)", min_value=0.0, step=100.0)
 
+        if cantidad > 0 and precio_unitario > 0:
+            costo_estimado = cantidad * precio_unitario
+            st.info(f"💰 Costo total estimado: ₡{costo_estimado:,.2f}")
+
+        guardar_abono = st.form_submit_button("Guardar aplicación de abono")
+        if guardar_abono:
+            add_insumo(str(fecha_abono), lote_abono, "Abono", etapa, producto, dosis, cantidad, precio_unitario)
+            st.success("✅ Aplicación de abono registrada correctamente.")
+            st.rerun()  # 🔁 Recargar para limpiar el formulario
     # Editar último abono
     with st.expander("✏️ Editar último registro de abono"):
         ultima_abonado = get_last_abono_by_date(str(fecha_abono))
@@ -909,6 +929,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
