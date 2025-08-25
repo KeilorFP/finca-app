@@ -27,6 +27,35 @@ from database import get_last_abono_by_date, update_abono
 from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
+
+#fecha helper
+def to_date(value, default_today=True):
+    """Convierte str | date | datetime -> date (robusto para Supabase/Railway)."""
+    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, str):
+        s = value.strip()
+        # ISO con Z u offset
+        if "T" in s:
+            s = s.replace("Z", "+00:00")
+            try:
+                return datetime.datetime.fromisoformat(s).date()
+            except Exception:
+                pass
+        # Solo fecha
+        try:
+            return datetime.date.fromisoformat(s)
+        except Exception:
+            pass
+        # Formatos comunes
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+            try:
+                return datetime.datetime.strptime(s, fmt).date()
+            except Exception:
+                continue
+    return datetime.date.today() if default_today else None
 # Codigos reutilizables
 LOTE_LISTA = ["Bijagual Fernando", "Bijagual Brothers", "El Alto", "Quebradaonda", "San Bernardo"]
 
@@ -258,7 +287,8 @@ if menu == "Registrar Jornada":
                 nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
 
                 # Fecha
-                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(fecha_actual, "%Y-%m-%d"))
+                fecha_base = to_date(fecha_actual)  # siempre devuelve datetime.date
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", value=fecha_base, format="YYYY-MM-DD")
 
                 # Lote (seguro)
                 try:
@@ -820,6 +850,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
