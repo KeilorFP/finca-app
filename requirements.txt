@@ -3,4 +3,4 @@ pandas
 psycopg2-binary
 bcrypt
 streamlit-option-menu==0.3.12
-reportlab==3.6.13
+fpdf2==2.7.9
