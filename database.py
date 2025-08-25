@@ -1,22 +1,20 @@
 # database.py — versión Supabase (Postgres) con psycopg2 + bcrypt
-
-import os
-import psycopg2
 from psycopg2 import IntegrityError
 import bcrypt
+import os
+import psycopg2
 
-
-# ==========================
-# Conexión
-# ==========================
 def connect_db():
-    """
-    Conecta a Supabase Postgres usando la variable de entorno DATABASE_URL.
-    Ejemplo:
-    postgresql://postgres:TU_PASSWORD@db.<project-ref>.supabase.co:5432/postgres
-    """
-    return psycopg2.connect(os.environ["postgresql://postgres:Pradok.87zeus@db.dvtnonjjdcuovechobau.supabase.co:5432/postgres"], sslmode="require")
-
+    # Lee primero de la variable de entorno (Railway)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        # Fallback para Streamlit Cloud (si algún día lo usas)
+        try:
+            import streamlit as st
+            url = st.secrets["DATABASE_URL"]
+        except Exception:
+            raise RuntimeError("DATABASE_URL no está configurada en variables de entorno ni en st.secrets.")
+    return psycopg2.connect(url, sslmode="require")
 
 # ==========================
 # (NO-OP) Creación de tablas
@@ -365,3 +363,4 @@ def update_herbicida(id, fecha, lote, etapa, producto, dosis, cantidad, precio_u
         conn.commit()
     finally:
         conn.close()
+
