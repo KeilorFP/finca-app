@@ -61,38 +61,81 @@ create_jornadas_table()
 create_insumos_table()
 create_trabajadores_table()
 
-# Función de login
+import streamlit as st
+
+# ====== CSS para login moderno ======
+st.markdown("""
+<style>
+/* Fondo general del sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #111827;
+}
+
+/* Títulos */
+h1, h2, h3 {
+    color: #10b981 !important;  /* verde */
+    font-weight: 700;
+}
+
+/* Inputs de texto */
+input {
+    border-radius: 10px !important;
+    border: 1px solid #374151 !important;
+    background-color: #1f2937 !important;
+    color: #f9fafb !important;
+}
+
+/* Botones */
+div.stButton > button {
+    background: linear-gradient(90deg, #10b981, #059669) !important;
+    color: white !important;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    padding: 0.6rem 1rem;
+    transition: all .2s ease-in-out;
+}
+div.stButton > button:hover {
+    background: linear-gradient(90deg, #059669, #10b981) !important;
+    box-shadow: 0 4px 12px rgba(16,185,129,.3);
+    transform: translateY(-1px);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ====== Login ======
 def login():
-    st.title("Finca Cafetalera - Inicio de Sesión")
+    st.title("☕ Finca Cafetalera - Inicio de Sesión")
 
-    menu = ["Iniciar sesión", "Crear cuenta"]
-    choice = st.sidebar.selectbox("Menú", menu)
+    # Menú superior sencillo en vez de sidebar
+    tabs = st.radio("Menú", ["Iniciar sesión", "Crear cuenta"], horizontal=True)
 
-    if choice == "Iniciar sesión":
+    if tabs == "Iniciar sesión":
         st.subheader("Ingresar")
-        username = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
+        username = st.text_input("👤 Usuario")
+        password = st.text_input("🔑 Contraseña", type="password")
         if st.button("Entrar"):
             user = verify_user(username, password)
             if user:
                 st.session_state.logged_in = True
                 st.session_state.user = username
-                st.rerun()  # 🔁 Fuerza recarga para entrar automáticamente
+                st.rerun()
             else:
-                st.error("Usuario o contraseña incorrectos")
+                st.error("❌ Usuario o contraseña incorrectos")
 
-    elif choice == "Crear cuenta":
+    elif tabs == "Crear cuenta":
         st.subheader("Crear nuevo usuario")
-        new_user = st.text_input("Nuevo usuario")
-        new_pass = st.text_input("Nueva contraseña", type="password")
+        new_user = st.text_input("👤 Nuevo usuario")
+        new_pass = st.text_input("🔑 Nueva contraseña", type="password")
         if st.button("Registrar"):
             try:
                 add_user(new_user, new_pass)
-                st.success("Usuario creado exitosamente. Ya puedes iniciar sesión.")
+                st.success("✅ Usuario creado exitosamente. Ya puedes iniciar sesión.")
             except:
-                st.error("Ese usuario ya existe")
+                st.error("⚠️ Ese usuario ya existe")
 
-# Estado de sesión
+
+# ====== Estado de sesión ======
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user" not in st.session_state:
@@ -100,11 +143,12 @@ if "user" not in st.session_state:
 
 if not st.session_state.logged_in:
     login()
-    st.stop()  # ⛔ Detiene la ejecución hasta que el usuario inicie sesión
+    st.stop()
 
-# --- Desde aquí ya hay sesión iniciada ---
+# ====== Panel principal ======
 st.title("📋 Panel de Control - Finca Cafetalera")
-st.write(f"👤 Usuario: {st.session_state.user}")
+st.write(f"👤 Usuario: **{st.session_state.user}**")
+
 
 #menu bottons
 with st.sidebar:
@@ -776,6 +820,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
