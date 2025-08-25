@@ -3,11 +3,14 @@ import datetime
 import time
 import pandas as pd
 import os
+import os, streamlit as st
 
-
-# Lee la cadena de conexión desde Secrets cuando estés en producción (Streamlit Cloud)
-if "DATABASE_URL" in st.secrets:
-    os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
+# En Railway usamos variable de entorno; si no existe, intentamos leer de st.secrets (solo en Streamlit Cloud)
+if not os.getenv("DATABASE_URL"):
+    try:
+        os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
+    except Exception:
+        pass
 
 
 from database import create_users_table, add_user, verify_user
@@ -657,5 +660,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
