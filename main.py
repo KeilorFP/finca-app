@@ -134,20 +134,27 @@ with st.sidebar:
         default_index=0,
         orientation="vertical",
         styles={
-            "container": {"padding": "0!important", "background": "rgba(255,255,255,0)"},
-            "icon": {"font-size": "18px"},
+            # Contenedor transparente
+            "container": {"padding": "0!important", "background": "rgba(0,0,0,0)"},
+            # Íconos visibles en dark
+            "icon": {"font-size": "18px", "color": "#10b981"},
+            # Botones (no seleccionado): fondo oscuro y texto claro
             "nav-link": {
                 "font-size": "15px",
                 "padding": "10px 12px",
-                "border-radius": "10px",
-                "margin": "4px 0",
-                "color": "#1f2937",
+                "border-radius": "12px",
+                "margin": "6px 0",
+                "color": "#e5e7eb",              # texto claro
+                "background-color": "#111827",   # gris muy oscuro
+                "border": "1px solid #374151",
             },
+            # Botón seleccionado: verde y texto blanco
             "nav-link-selected": {
-                "background": "linear-gradient(90deg, #10b98122, #10b98133)",
-                "color": "#065f46",
-                "font-weight": "600",
-                "border": "1px solid #10b98155",
+                "background": "linear-gradient(90deg, #10b981, #059669)",
+                "color": "#ffffff",
+                "font-weight": "700",
+                "border": "1px solid #10b981",
+                "box-shadow": "0 4px 18px rgba(16,185,129,.25)",
             },
         }
     )
@@ -773,6 +780,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
