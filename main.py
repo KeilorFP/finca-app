@@ -4,6 +4,11 @@ import time
 import pandas as pd
 import os
 import os, streamlit as st
+from streamlit_option_menu import option_menu
+# IMPORTS PARA PDF
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # En Railway usamos variable de entorno; si no existe, intentamos leer de st.secrets (solo en Streamlit Cloud)
 if not os.getenv("DATABASE_URL"):
@@ -101,18 +106,52 @@ if not st.session_state.logged_in:
 st.title("📋 Panel de Control - Finca Cafetalera")
 st.write(f"👤 Usuario: {st.session_state.user}")
 
-# Menú principal
-st.sidebar.title("Menú Principal")
-menu = st.sidebar.radio("Selecciona una sección:", [
-    "Registrar Jornada",
-    "Registrar Abono",
-    "Registrar Fumigación",
-    "Registrar Cal",
-    "Registrar Herbicida",
-    "Ver Registros",
-    "Añadir Empleado",
-    "Reporte Semanal (Dom–Sáb)"
-])
+#menu bottons
+with st.sidebar:
+    st.markdown("## 🧭 Menú Principal")
+    menu = option_menu(
+        menu_title=None,
+        options=[
+            "Registrar Jornada",
+            "Registrar Abono",
+            "Registrar Fumigación",
+            "Registrar Cal",
+            "Registrar Herbicida",
+            "Ver Registros",
+            "Añadir Empleado",
+            "Reporte Semanal (Dom–Sáb)"
+        ],
+        icons=[
+            "calendar-check",  # Jornada
+            "leaf",            # Abono
+            "bug",             # Fumigación
+            "beaker",          # Cal
+            "droplet",         # Herbicida
+            "journal-text",    # Ver Registros
+            "person-plus",     # Añadir Empleado
+            "bar-chart"        # Reporte
+        ],
+        default_index=0,
+        orientation="vertical",
+        styles={
+            "container": {"padding": "0!important", "background": "rgba(255,255,255,0)"},
+            "icon": {"font-size": "18px"},
+            "nav-link": {
+                "font-size": "15px",
+                "padding": "10px 12px",
+                "border-radius": "10px",
+                "margin": "4px 0",
+                "color": "#1f2937",
+            },
+            "nav-link-selected": {
+                "background": "linear-gradient(90deg, #10b98122, #10b98133)",
+                "color": "#065f46",
+                "font-weight": "600",
+                "border": "1px solid #10b98155",
+            },
+        }
+    )
+
 # FORMULARIO DE AÑADIR EMPLEADO
 if menu == "Añadir Empleado":
     st.subheader("👥 Registrar Nuevo Empleado")
@@ -537,7 +576,7 @@ if menu == "Registrar Herbicida":
         else:
             st.info("No hay registros de herbicida para editar.")
 
-    # ============================================================================
+# ============================================================================
 # REPORETE SEMANAL (Domingo a Sábado) - Salarios por trabajador
 # ============================================================================
 if menu == "Reporte Semanal (Dom–Sáb)":
@@ -631,12 +670,12 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             st.write(f"- **Total horas extra (₡):** {total_extras:,.0f}")
             st.write(f"- **Total a pagar (₡):** {total_semana:,.0f}")
 
-            # 7) Descargas
+            # 7) Descargas CSV
             csv_resumen = resumen.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "⬇️ Descargar resumen semanal (CSV)",
                 data=csv_resumen,
-                file_name=f"reporte_semanal_{inicio_sem}_a_{fin_sem}.csv",
+                file_name=f"reporte_semanal_{inicio_sem.strftime('%Y-%m-%d')}_a_{fin_sem.strftime('%Y-%m-%d')}.csv",
                 mime="text/csv"
             )
 
@@ -645,8 +684,82 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             st.download_button(
                 "⬇️ Descargar detalle semanal (CSV)",
                 data=csv_detalle,
-                file_name=f"reporte_semanal_detalle_{inicio_sem}_a_{fin_sem}.csv",
+                file_name=f"reporte_semanal_detalle_{inicio_sem.strftime('%Y-%m-%d')}_a_{fin_sem.strftime('%Y-%m-%d')}.csv",
                 mime="text/csv"
+            )
+
+            # ===== 7.3) PDF: Resumen por trabajador (Días, Horas Extra, Total a Pagar) =====
+            # Tomamos solo las columnas solicitadas
+            resumen_min = resumen[["Trabajador", "Días", "Horas Extra", "Total a Pagar"]].copy()
+
+            def generar_pdf_resumen_trabajador(resumen_min, inicio_sem_str, fin_sem_str):
+                buffer = BytesIO()
+                c = canvas.Canvas(buffer, pagesize=letter)
+                width, height = letter
+
+                # Encabezado
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(50, height - 50, "Resumen por trabajador")
+                c.setFont("Helvetica", 11)
+                c.drawString(50, height - 70, f"Semana: {inicio_sem_str} a {fin_sem_str} (Dom–Sáb)")
+
+                # Encabezados de tabla
+                y = height - 110
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(50,  y, "Trabajador")
+                c.drawString(260, y, "Días")
+                c.drawString(310, y, "Horas Extra")
+                c.drawString(410, y, "Total a pagar (₡)")
+                c.line(50, y-3, 560, y-3)
+
+                # Filas
+                c.setFont("Helvetica", 10)
+                y -= 20
+                for _, row in resumen_min.iterrows():
+                    trabajador = str(row["Trabajador"])
+                    dias = f"{row['Días']:.0f}"
+                    hrs_extra = f"{row['Horas Extra']:.1f}"
+                    total = f"{row['Total a Pagar']:,.0f}"
+
+                    # Ajuste simple para nombres largos (evita desbordes)
+                    nombre = (trabajador[:34] + "…") if len(trabajador) > 35 else trabajador
+
+                    c.drawString(50,  y, nombre)
+                    c.drawRightString(295, y, dias)
+                    c.drawRightString(375, y, hrs_extra)
+                    c.drawRightString(560, y, total)
+
+                    y -= 18
+                    if y < 60:  # salto de página
+                        c.showPage()
+                        # repetir encabezados de tabla en nueva página
+                        c.setFont("Helvetica-Bold", 11)
+                        y = height - 50
+                        c.drawString(50,  y, "Trabajador")
+                        c.drawString(260, y, "Días")
+                        c.drawString(310, y, "Horas Extra")
+                        c.drawString(410, y, "Total a pagar (₡)")
+                        c.line(50, y-3, 560, y-3)
+                        c.setFont("Helvetica", 10)
+                        y -= 20
+
+                c.save()
+                pdf_bytes = buffer.getvalue()
+                buffer.close()
+                return pdf_bytes
+
+            # Generar y descargar PDF
+            pdf_resumen_simple = generar_pdf_resumen_trabajador(
+                resumen_min,
+                inicio_sem.strftime("%Y-%m-%d"),
+                fin_sem.strftime("%Y-%m-%d")
+            )
+
+            st.download_button(
+                "⬇️ Descargar resumen por trabajador (PDF)",
+                data=pdf_resumen_simple,
+                file_name=f"resumen_trabajador_{inicio_sem.strftime('%Y-%m-%d')}_a_{fin_sem.strftime('%Y-%m-%d')}.pdf",
+                mime="application/pdf"
             )
 
 
@@ -660,6 +773,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
