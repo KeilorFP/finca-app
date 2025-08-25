@@ -1,10 +1,9 @@
-import streamlit as st
 import time
 import pandas as pd
 import os
 import os, streamlit as st
 from streamlit_option_menu import option_menu
-import datetime as dt
+import datetime
 # IMPORTS PARA PDF
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -27,6 +26,75 @@ from database import get_last_abono_by_date, update_abono
 from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
+
+#Facilidad para movil
+
+st.markdown("""
+<style>
+/* —— Mejora móvil general (<= 640px) —— */
+@media (max-width: 640px) {
+  /* margen/padding general */
+  .block-container { padding: 0.6rem !important; }
+
+  /* etiquetas más legibles */
+  label, .stSelectbox label, .stNumberInput label, .stDateInput label {
+    font-size: 0.95rem !important;
+  }
+
+  /* campos más grandes para el dedo + evita zoom iOS (font-size >=16px) */
+  input, textarea, select {
+    font-size: 16px !important;
+    min-height: 44px !important;
+  }
+  [role="spinbutton"] { min-height: 44px !important; }
+
+  /* botones anchos y cómodos (incluye download_button) */
+  div.stButton > button, .stDownloadButton > button {
+    width: 100% !important;
+    padding: 12px 16px !important;
+    font-size: 16px !important;
+    border-radius: 10px !important;
+    background: linear-gradient(90deg, #10b981, #059669) !important;
+    color: #fff !important;
+    border: 1px solid #10b981 !important;
+  }
+
+  /* métricas alineadas */
+  .stMetric { text-align: left !important; }
+
+  /* —— Menú lateral (streamlit-option-menu) coherente con tu tema —— */
+  section[data-testid="stSidebar"] .nav-link {
+    width: 100% !important;
+    padding: 12px 14px !important;
+    margin: 8px 0 !important;
+    border-radius: 12px !important;
+    background: #111827 !important;          /* fondo oscuro */
+    border: 1px solid #374151 !important;     /* borde gris */
+    color: #e5e7eb !important;                /* texto claro */
+  }
+  section[data-testid="stSidebar"] .nav-link i {
+    color: #10b981 !important;                /* icono verde */
+    font-size: 20px !important;
+    margin-right: 8px;
+  }
+  section[data-testid="stSidebar"] .nav-link:hover {
+    border-color: #10b981 !important;
+    box-shadow: 0 4px 14px rgba(16,185,129,.25) !important;
+    transform: translateY(-1px);
+  }
+  section[data-testid="stSidebar"] .nav-link-selected {
+    background: linear-gradient(90deg, #10b981, #059669) !important;
+    color: #ffffff !important;
+    border: 1px solid #10b981 !important;
+    box-shadow: 0 6px 18px rgba(16,185,129,.28) !important;
+    font-weight: 700 !important;
+  }
+  section[data-testid="stSidebar"] .nav-link-selected i {
+    color: #ffffff !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 # Codigos reutilizables
@@ -220,178 +288,68 @@ if menu == "Añadir Empleado":
                     st.error(f"❌ Error al registrar empleado: {str(e)}")
 
 
-
-    # FORMULARIO DE JORNADA
-# ====== Estilos (coherentes con tu tema oscuro + verde) ======
-st.markdown("""
-<style>
-/* Card / contenedor del form */
-.block-container .card {
-  background: #111827;                /* fondo oscuro */
-  border: 1px solid #374151;          /* borde gris */
-  border-radius: 14px;
-  padding: 18px 16px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.25);
-  margin-bottom: 14px;
-}
-
-/* Títulos */
-.card h3, .card h4, .card h5 { color: #10b981; margin: 0 0 10px 0; }
-
-/* Inputs y selects */
-.card input, .card textarea {
-  border-radius: 10px !important;
-  border: 1px solid #374151 !important;
-  background-color: #1f2937 !important;
-  color: #f9fafb !important;
-}
-.card .stSelectbox > div, .card .stDateInput > div {
-  border-radius: 10px;
-}
-
-/* Number inputs (spinbutton) */
-.card [role="spinbutton"] {
-  border-radius: 10px !important;
-  border: 1px solid #374151 !important;
-  background-color: #1f2937 !important;
-  color: #f9fafb !important;
-  padding: .4rem .6rem;
-}
-
-/* Botón principal */
-.card div.stButton > button {
-  width: 100%;
-  background: linear-gradient(90deg, #10b981, #059669) !important;
-  color: #fff !important;
-  border: 1px solid #10b981 !important;
-  border-radius: 10px !important;
-  font-weight: 700;
-  padding: .6rem 1rem;
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-.card div.stButton > button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(16,185,129,.35);
-}
-
-/* Expander estilizado */
-details.st-expander {
-  background: #0b1220;
-  border: 1px solid #1f2937;
-  border-radius: 12px;
-}
-details.st-expander > summary {
-  color: #10b981 !important;
-  font-weight: 700;
-  padding: 10px 12px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ====== Helper robusto para fechas (Supabase date/timestamptz → date) ======
-def to_date(value, default_today=True):
-    if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
-        return value
-    if isinstance(value, dt.datetime):
-        return value.date()
-    if isinstance(value, str):
-        s = value.strip()
-        if "T" in s:
-            s = s.replace("Z", "+00:00")
-            try:
-                return dt.datetime.fromisoformat(s).date()
-            except Exception:
-                pass
-        try:
-            return dt.date.fromisoformat(s)
-        except Exception:
-            pass
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
-            try:
-                return dt.datetime.strptime(s, fmt).date()
-            except Exception:
-                continue
-    return dt.date.today() if default_today else None
-
-# ====== FORMULARIO DE JORNADA (versión moderna) ======
+#Formulario jornada
 if menu == "Registrar Jornada":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### 🧑‍🌾 Registrar Jornada Laboral")
-
+    st.subheader("🧑‍🌾 Registrar Jornada Laboral")
     trabajadores_disponibles = get_all_trabajadores()
     if not trabajadores_disponibles:
-        st.warning("⚠️  No hay trabajadores registrados. Agrega uno primero desde **Añadir Empleado**.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.warning("⚠️  No hay trabajadores registrados. Por favor agrega uno primero desde el panel correspondiente.")
     else:
         with st.form("form_jornada"):
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                trabajador = st.selectbox("Trabajador", trabajadores_disponibles, help="Selecciona el empleado que realizó la jornada.")
-                fecha = st.date_input("Fecha de trabajo", dt.date.today(), format="YYYY-MM-DD")
-                lote = st.selectbox("Lote o parcela", LOTE_LISTA, help="Lote donde se realizó la labor.")
-            with c2:
-                actividad = st.selectbox("Tipo de actividad", ACTIVIDADES, help="Selecciona el tipo de labor realizada.")
-                dias = st.number_input("Días trabajados", min_value=0, max_value=31, step=1, help="Cantidad de días completos trabajados.")
-                horas_extra = st.number_input("Horas extra", min_value=0.0, step=0.5, help="Horas adicionales a la jornada normal.")
+            trabajador = st.selectbox("Selecciona un trabajador", trabajadores_disponibles)
+            fecha = st.date_input("Fecha de trabajo", datetime.date.today())
+            lote = st.selectbox("Lote o parcela", LOTE_LISTA)
+            actividad = st.selectbox("Tipo de actividad", ACTIVIDADES)
+            dias = st.number_input("Días trabajados", min_value=0, max_value=31, step=1)
+            horas_extra = st.number_input("Horas extra trabajadas", min_value=0.0, step=0.5)
 
-            # KPIs / métrica rápida
-            horas_normales = dias * 6
-            k1, k2 = st.columns(2)
-            with k1:
-                st.metric(label="⏱️ Horas normales (auto)", value=f"{horas_normales}")
-            with k2:
-                st.metric(label="➕ Horas extra", value=f"{horas_extra}")
+            horas_normales = dias * 6  # Cálculo automático
+            st.info(f"🕒 Horas normales calculadas automáticamente: {horas_normales} horas")
 
-            st.caption("Las **horas normales** se calculan automáticamente: `días × 6`.")
-
-            submitted = st.form_submit_button("💾 Guardar jornada")
+            submitted = st.form_submit_button("Guardar jornada")
             if submitted:
-                if not trabajador or str(trabajador).strip() == "":
+                if trabajador.strip() == "":
                     st.warning("⚠️ Por favor selecciona un trabajador.")
                 else:
                     add_jornada(trabajador, str(fecha), lote, actividad, dias, horas_normales, horas_extra)
                     st.success("✅ Jornada registrada exitosamente")
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # ====== Editor del último registro ======
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        with st.expander("✏️ Editar último registro de jornada", expanded=False):
+        with st.expander("✏️ Editar último registro de jornada"):
             ultima_jornada = get_last_jornada_by_date(str(fecha))
             if ultima_jornada:
-                (jornada_id, trabajador_actual, fecha_actual,
-                 lote_actual, actividad_actual, dias_act, hrs_norm_act, hrs_extra_act) = ultima_jornada
+                jornada_id, trabajador_actual, fecha_actual, lote, actividad, dias, horas_normales, horas_extra = ultima_jornada
 
-                e1, e2 = st.columns(2)
-                with e1:
-                    try:
-                        idx_trab = trabajadores_disponibles.index(trabajador_actual)
-                    except ValueError:
-                        idx_trab = 0
-                    nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
+                # Trabajador
+                try:
+                    idx_trab = trabajadores_disponibles.index(trabajador_actual)
+                except ValueError:
+                    idx_trab = 0
+                nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
 
-                    fecha_base = to_date(fecha_actual)
-                    nueva_fecha = st.date_input("Nueva fecha de trabajo", value=fecha_base, format="YYYY-MM-DD")
+                # Fecha
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(fecha_actual, "%Y-%m-%d"))
 
-                    try:
-                        idx_lote = LOTE_LISTA.index(lote_actual)
-                    except ValueError:
-                        idx_lote = 0
-                    nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+                # Lote (seguro)
+                try:
+                    idx_lote = LOTE_LISTA.index(lote)
+                except ValueError:
+                    idx_lote = 0
+                nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
 
-                with e2:
-                    try:
-                        idx_act = ACTIVIDADES.index(actividad_actual)
-                    except ValueError:
-                        idx_act = 0
-                    nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
+                # Actividad (segura)
+                try:
+                    idx_act = ACTIVIDADES.index(actividad)
+                except ValueError:
+                    idx_act = 0
+                nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
 
-                    nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias_act), min_value=0, max_value=31, step=1)
-                    nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(hrs_extra_act), min_value=0.0, step=0.5)
-                    nuevas_horas_normales = nuevos_dias * 6
-                    st.metric(label="⏱️ Nuevas horas normales", value=f"{nuevas_horas_normales}")
+                # Números
+                nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias), min_value=0, max_value=31, step=1)
+                nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(horas_extra), min_value=0.0, step=0.5)
+                nuevas_horas_normales = nuevos_dias * 6
+                st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
 
-                if st.button("✅ Actualizar jornada"):
+                if st.button("Actualizar jornada"):
                     update_jornada(
                         jornada_id,
                         nuevo_trabajador,
@@ -405,8 +363,7 @@ if menu == "Registrar Jornada":
                     st.success("✅ Jornada actualizada correctamente.")
                     st.rerun()
             else:
-                st.info("ℹ️ No hay registros de jornada para editar.")
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.info("No hay registros de jornada para editar.")
 # FORMULARIO DE ABONADO
 if menu == "Registrar Abono":
     st.subheader("🌿 Registrar Aplicación de Abono")
@@ -929,6 +886,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
