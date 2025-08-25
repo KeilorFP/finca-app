@@ -113,20 +113,20 @@ with st.sidebar:
         menu_title=None,
         options=[
             "Registrar Jornada",
-            "🌱 Registrar Abono",
-            "🐞 Registrar Fumigación",
-            "⚗️ Registrar Cal",
-            "💧 Registrar Herbicida",
-            "📑 Ver Registros",
-            "➕ Añadir Empleado",
-            "📊 Reporte Semanal (Dom–Sáb)"
+            "Registrar Abono",
+            "Registrar Fumigación",
+            "Registrar Cal",
+            "Registrar Herbicida",
+            "Ver Registros",
+            "Añadir Empleado",
+            "Reporte Semanal (Dom–Sáb)"
         ],
         icons=[
             "calendar-check",  # Jornada
-            "leaf",            # Abono (emoji 🌱 ya añadido en texto)
-            "bug",             # Fumigación (emoji 🐞 ya añadido en texto)
-            "beaker",          # Cal (emoji ⚗️ añadido en texto)
-            "droplet",         # Herbicida (emoji 💧 añadido en texto)
+            "leaf",            # Abono
+            "bug",             # Fumigación
+            "beaker",          # Cal
+            "droplet",         # Herbicida
             "journal-text",    # Ver Registros
             "person-plus",     # Añadir Empleado
             "bar-chart"        # Reporte
@@ -135,14 +135,14 @@ with st.sidebar:
         orientation="vertical",
         styles={
             "container": {"padding": "0!important", "background": "rgba(0,0,0,0)"},
-            "icon": {"font-size": "18px", "color": "#10b981"},
+            "icon": {"font-size": "18px", "color": "#10b981"},   # ← iconos verdes
             "nav-link": {
                 "font-size": "15px",
                 "padding": "10px 12px",
                 "border-radius": "12px",
                 "margin": "6px 0",
-                "color": "#e5e7eb",
-                "background-color": "#111827",
+                "color": "#e5e7eb",              # texto claro
+                "background-color": "#111827",   # gris oscuro
                 "border": "1px solid #374151",
             },
             "nav-link-selected": {
@@ -154,7 +154,6 @@ with st.sidebar:
             },
         }
     )
-
 
 # FORMULARIO DE AÑADIR EMPLEADO
 if menu == "Añadir Empleado":
@@ -777,6 +776,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
