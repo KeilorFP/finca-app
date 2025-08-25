@@ -28,34 +28,7 @@ from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
 
-#fecha helper
-def to_date(value, default_today=True):
-    """Convierte str | date | datetime -> date (robusto para Supabase/Railway)."""
-    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-        return value
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, str):
-        s = value.strip()
-        # ISO con Z u offset
-        if "T" in s:
-            s = s.replace("Z", "+00:00")
-            try:
-                return datetime.datetime.fromisoformat(s).date()
-            except Exception:
-                pass
-        # Solo fecha
-        try:
-            return datetime.date.fromisoformat(s)
-        except Exception:
-            pass
-        # Formatos comunes
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
-            try:
-                return datetime.datetime.strptime(s, fmt).date()
-            except Exception:
-                continue
-    return datetime.date.today() if default_today else None
+
 # Codigos reutilizables
 LOTE_LISTA = ["Bijagual Fernando", "Bijagual Brothers", "El Alto", "Quebradaonda", "San Bernardo"]
 
@@ -249,68 +222,176 @@ if menu == "Añadir Empleado":
 
 
     # FORMULARIO DE JORNADA
+# ====== Estilos (coherentes con tu tema oscuro + verde) ======
+st.markdown("""
+<style>
+/* Card / contenedor del form */
+.block-container .card {
+  background: #111827;                /* fondo oscuro */
+  border: 1px solid #374151;          /* borde gris */
+  border-radius: 14px;
+  padding: 18px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  margin-bottom: 14px;
+}
+
+/* Títulos */
+.card h3, .card h4, .card h5 { color: #10b981; margin: 0 0 10px 0; }
+
+/* Inputs y selects */
+.card input, .card textarea {
+  border-radius: 10px !important;
+  border: 1px solid #374151 !important;
+  background-color: #1f2937 !important;
+  color: #f9fafb !important;
+}
+.card .stSelectbox > div, .card .stDateInput > div {
+  border-radius: 10px;
+}
+
+/* Number inputs (spinbutton) */
+.card [role="spinbutton"] {
+  border-radius: 10px !important;
+  border: 1px solid #374151 !important;
+  background-color: #1f2937 !important;
+  color: #f9fafb !important;
+  padding: .4rem .6rem;
+}
+
+/* Botón principal */
+.card div.stButton > button {
+  width: 100%;
+  background: linear-gradient(90deg, #10b981, #059669) !important;
+  color: #fff !important;
+  border: 1px solid #10b981 !important;
+  border-radius: 10px !important;
+  font-weight: 700;
+  padding: .6rem 1rem;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.card div.stButton > button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(16,185,129,.35);
+}
+
+/* Expander estilizado */
+details.st-expander {
+  background: #0b1220;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+}
+details.st-expander > summary {
+  color: #10b981 !important;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ====== Helper robusto para fechas (Supabase date/timestamptz → date) ======
+def to_date(value, default_today=True):
+    if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
+        return value
+    if isinstance(value, dt.datetime):
+        return value.date()
+    if isinstance(value, str):
+        s = value.strip()
+        if "T" in s:
+            s = s.replace("Z", "+00:00")
+            try:
+                return dt.datetime.fromisoformat(s).date()
+            except Exception:
+                pass
+        try:
+            return dt.date.fromisoformat(s)
+        except Exception:
+            pass
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+            try:
+                return dt.datetime.strptime(s, fmt).date()
+            except Exception:
+                continue
+    return dt.date.today() if default_today else None
+
+# ====== FORMULARIO DE JORNADA (versión moderna) ======
 if menu == "Registrar Jornada":
-    st.subheader("🧑‍🌾 Registrar Jornada Laboral")
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("### 🧑‍🌾 Registrar Jornada Laboral")
+
     trabajadores_disponibles = get_all_trabajadores()
     if not trabajadores_disponibles:
-        st.warning("⚠️  No hay trabajadores registrados. Por favor agrega uno primero desde el panel correspondiente.")
+        st.warning("⚠️  No hay trabajadores registrados. Agrega uno primero desde **Añadir Empleado**.")
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         with st.form("form_jornada"):
-            trabajador = st.selectbox("Selecciona un trabajador", trabajadores_disponibles)
-            fecha = st.date_input("Fecha de trabajo", datetime.date.today())
-            lote = st.selectbox("Lote o parcela", LOTE_LISTA)
-            actividad = st.selectbox("Tipo de actividad", ACTIVIDADES)
-            dias = st.number_input("Días trabajados", min_value=0, max_value=31, step=1)
-            horas_extra = st.number_input("Horas extra trabajadas", min_value=0.0, step=0.5)
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                trabajador = st.selectbox("Trabajador", trabajadores_disponibles, help="Selecciona el empleado que realizó la jornada.")
+                fecha = st.date_input("Fecha de trabajo", dt.date.today(), format="YYYY-MM-DD")
+                lote = st.selectbox("Lote o parcela", LOTE_LISTA, help="Lote donde se realizó la labor.")
+            with c2:
+                actividad = st.selectbox("Tipo de actividad", ACTIVIDADES, help="Selecciona el tipo de labor realizada.")
+                dias = st.number_input("Días trabajados", min_value=0, max_value=31, step=1, help="Cantidad de días completos trabajados.")
+                horas_extra = st.number_input("Horas extra", min_value=0.0, step=0.5, help="Horas adicionales a la jornada normal.")
 
-            horas_normales = dias * 6  # Cálculo automático
-            st.info(f"🕒 Horas normales calculadas automáticamente: {horas_normales} horas")
+            # KPIs / métrica rápida
+            horas_normales = dias * 6
+            k1, k2 = st.columns(2)
+            with k1:
+                st.metric(label="⏱️ Horas normales (auto)", value=f"{horas_normales}")
+            with k2:
+                st.metric(label="➕ Horas extra", value=f"{horas_extra}")
 
-            submitted = st.form_submit_button("Guardar jornada")
+            st.caption("Las **horas normales** se calculan automáticamente: `días × 6`.")
+
+            submitted = st.form_submit_button("💾 Guardar jornada")
             if submitted:
-                if trabajador.strip() == "":
+                if not trabajador or str(trabajador).strip() == "":
                     st.warning("⚠️ Por favor selecciona un trabajador.")
                 else:
                     add_jornada(trabajador, str(fecha), lote, actividad, dias, horas_normales, horas_extra)
                     st.success("✅ Jornada registrada exitosamente")
 
-        with st.expander("✏️ Editar último registro de jornada"):
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ====== Editor del último registro ======
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        with st.expander("✏️ Editar último registro de jornada", expanded=False):
             ultima_jornada = get_last_jornada_by_date(str(fecha))
             if ultima_jornada:
-                jornada_id, trabajador_actual, fecha_actual, lote, actividad, dias, horas_normales, horas_extra = ultima_jornada
+                (jornada_id, trabajador_actual, fecha_actual,
+                 lote_actual, actividad_actual, dias_act, hrs_norm_act, hrs_extra_act) = ultima_jornada
 
-                # Trabajador
-                try:
-                    idx_trab = trabajadores_disponibles.index(trabajador_actual)
-                except ValueError:
-                    idx_trab = 0
-                nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
+                e1, e2 = st.columns(2)
+                with e1:
+                    try:
+                        idx_trab = trabajadores_disponibles.index(trabajador_actual)
+                    except ValueError:
+                        idx_trab = 0
+                    nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
 
-                # Fecha
-                fecha_base = to_date(fecha_actual)  # siempre devuelve datetime.date
-                nueva_fecha = st.date_input("Nueva fecha de trabajo", value=fecha_base, format="YYYY-MM-DD")
+                    fecha_base = to_date(fecha_actual)
+                    nueva_fecha = st.date_input("Nueva fecha de trabajo", value=fecha_base, format="YYYY-MM-DD")
 
-                # Lote (seguro)
-                try:
-                    idx_lote = LOTE_LISTA.index(lote)
-                except ValueError:
-                    idx_lote = 0
-                nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+                    try:
+                        idx_lote = LOTE_LISTA.index(lote_actual)
+                    except ValueError:
+                        idx_lote = 0
+                    nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
 
-                # Actividad (segura)
-                try:
-                    idx_act = ACTIVIDADES.index(actividad)
-                except ValueError:
-                    idx_act = 0
-                nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
+                with e2:
+                    try:
+                        idx_act = ACTIVIDADES.index(actividad_actual)
+                    except ValueError:
+                        idx_act = 0
+                    nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
 
-                # Números
-                nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias), min_value=0, max_value=31, step=1)
-                nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(horas_extra), min_value=0.0, step=0.5)
-                nuevas_horas_normales = nuevos_dias * 6
-                st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
+                    nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias_act), min_value=0, max_value=31, step=1)
+                    nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(hrs_extra_act), min_value=0.0, step=0.5)
+                    nuevas_horas_normales = nuevos_dias * 6
+                    st.metric(label="⏱️ Nuevas horas normales", value=f"{nuevas_horas_normales}")
 
-                if st.button("Actualizar jornada"):
+                if st.button("✅ Actualizar jornada"):
                     update_jornada(
                         jornada_id,
                         nuevo_trabajador,
@@ -324,30 +405,8 @@ if menu == "Registrar Jornada":
                     st.success("✅ Jornada actualizada correctamente.")
                     st.rerun()
             else:
-                st.info("No hay registros de jornada para editar.")
-
-
-# FORMULARIO DE ABONADO
-if menu == "Registrar Abono":
-    st.subheader("🌿 Registrar Aplicación de Abono")
-    with st.form("form_abonado"):
-        fecha_abono = st.date_input("Fecha de aplicación de abono", datetime.date.today())
-        lote_abono = st.selectbox("Lote o parcela", LOTE_LISTA)
-        etapa = st.selectbox("Etapa de abonado", ETAPAS_ABONO)
-        producto = st.text_input("Nombre del producto (ej: 18-5-15, Multimag)")
-        dosis = st.number_input("Dosis aplicada (en gramos por planta)", min_value=0.0, step=0.1)
-        cantidad = st.number_input("Cantidad aplicada (en sacos)", min_value=0.0, step=0.5)
-        precio_unitario = st.number_input("Precio por saco (₡)", min_value=0.0, step=100.0)
-
-        if cantidad > 0 and precio_unitario > 0:
-            costo_estimado = cantidad * precio_unitario
-            st.info(f"💰 Costo total estimado: ₡{costo_estimado:,.2f}")
-
-        guardar_abono = st.form_submit_button("Guardar aplicación de abono")
-        if guardar_abono:
-            add_insumo(str(fecha_abono), lote_abono, "Abono", etapa, producto, dosis, cantidad, precio_unitario)
-            st.success("✅ Aplicación de abono registrada correctamente.")
-            st.rerun()  # 🔁 Recargar para limpiar el formulario
+                st.info("ℹ️ No hay registros de jornada para editar.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # Editar último abono
     with st.expander("✏️ Editar último registro de abono"):
@@ -850,6 +909,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
