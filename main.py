@@ -123,9 +123,9 @@ with st.sidebar:
         ],
         icons=[
             "calendar-check",  # Jornada
-            "leaf",            # Abono
-            "bug",             # Fumigación
-            "beaker",          # Cal
+            "Fuel pump",            # Abono
+            "Bezier",             # Fumigación
+            "Gem",          # Cal
             "droplet",         # Herbicida
             "journal-text",    # Ver Registros
             "person-plus",     # Añadir Empleado
@@ -776,6 +776,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
