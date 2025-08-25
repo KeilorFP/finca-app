@@ -5,22 +5,34 @@ import os
 import psycopg2
 
 def connect_db():
-    # Lee primero de la variable de entorno (Railway)
+    
     url = os.getenv("DATABASE_URL")
+
+ 
     if not url:
-        # Fallback para Streamlit Cloud (si algún día lo usas)
         try:
             import streamlit as st
             url = st.secrets["DATABASE_URL"]
         except Exception:
             raise RuntimeError("DATABASE_URL no está configurada en variables de entorno ni en st.secrets.")
-    return psycopg2.connect(url, sslmode="require")
 
-# ==========================
-# (NO-OP) Creación de tablas
-# — Ya creaste las tablas en Supabase con SQL.
-# — Estas funciones quedan vacías para no romper tu main.py.
-# ==========================
+    url = url.strip()
+
+
+    if "sslmode=" not in url:
+        url = url + ("&sslmode=require" if "?" in url else "?sslmode=require")
+
+    try:
+        return psycopg2.connect(url)
+    except Exception as e:
+        # Sanitiza la URL para logs (oculta la contraseña)
+        try:
+            before_at, after_at = url.split("@", 1)
+            safe_url = "postgresql://postgres:***@" + after_at
+        except Exception:
+            safe_url = "postgresql://postgres:***@<host>:<port>/<db>"
+        raise RuntimeError(f"No pude conectar a Postgres con DSN={safe_url}. Detalle: {e}")
+
 def create_users_table():
     pass
 
@@ -363,4 +375,5 @@ def update_herbicida(id, fecha, lote, etapa, producto, dosis, cantidad, precio_u
         conn.commit()
     finally:
         conn.close()
+
 
