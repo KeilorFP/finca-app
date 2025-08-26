@@ -4,6 +4,8 @@ import os
 import os, streamlit as st
 from streamlit_option_menu import option_menu
 import datetime
+import datetime as dt
+
 # IMPORTS PARA PDF
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -327,7 +329,8 @@ if menu == "Registrar Jornada":
                 nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
 
                 # Fecha
-                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(fecha_actual, "%Y-%m-%d"))
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(str(fecha_actual)[:10], "%Y-%m-%d").date(), format="YYYY-MM-DD)
+
 
                 # Lote (seguro)
                 try:
@@ -886,6 +889,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
