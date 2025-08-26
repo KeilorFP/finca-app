@@ -329,7 +329,7 @@ if menu == "Registrar Jornada":
                 nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
 
                 # Fecha
-                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(str(fecha_actual)[:10], "%Y-%m-%d").date(), format="YYYY-MM-DD)
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", datetime.datetime.strptime(str(fecha_actual)[:10], "%Y-%m-%d").date(), format="YYYY-MM-DD")
 
 
                 # Lote (seguro)
@@ -889,6 +889,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
