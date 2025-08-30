@@ -480,31 +480,46 @@ if menu == "Ver Registros":
 
     # Mostrar registros de jornadas
     with st.expander("📋 Ver Jornadas Registradas"):
-        jornadas = get_all_jornadas()
-        if jornadas:
-            df_jornadas = pd.DataFrame(jornadas, columns=[
-                "ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"
-            ])
-            resumen = df_jornadas.groupby("Trabajador").agg({
-                "Días": "sum",
-                "Horas Normales": "sum",
-                "Horas Extra": "sum"
-            }).reset_index()
-            resumen["Pago Horas Normales"] = resumen["Días"] * pago_dia
-            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
-            resumen["Total Ganado"] = resumen["Pago Horas Normales"] + resumen["Pago Horas Extra"]
+    jornadas = get_all_jornadas()
+    if jornadas:
+        df_jornadas = pd.DataFrame(jornadas, columns=[
+            "ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"
+        ])
 
-            st.markdown("### 👥 Resumen por Trabajador")
-            st.dataframe(resumen.style.format({
-                "Días": "{:,.0f}",
-                "Horas Normales": "{:,.0f}",
-                "Horas Extra": "{:,.0f}",
-                "Pago Horas Normales": "₡{:,.0f}",
+        # Tipos correctos y sin horas normales en los cálculos
+        df_jornadas["Días"] = pd.to_numeric(df_jornadas["Días"], errors="coerce").fillna(0).astype(int)
+        df_jornadas["Horas Extra"] = pd.to_numeric(df_jornadas["Horas Extra"], errors="coerce").fillna(0.0)
+
+        # Resumen por trabajador: solo días y horas extra
+        resumen = df_jornadas.groupby("Trabajador", as_index=False).agg({
+            "Días": "sum",
+            "Horas Extra": "sum"
+        })
+        resumen = resumen.rename(columns={"Días": "Días trabajados"})
+        resumen["Días a pagar"] = resumen["Días trabajados"]
+
+        # Pagos con tarifas globales
+        resumen["Pago por Días"] = resumen["Días a pagar"] * pago_dia
+        resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
+        resumen["Total Ganado"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
+
+        st.markdown("### 👥 Resumen por Trabajador")
+        cols = ["Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
+                "Pago por Días", "Pago Horas Extra", "Total Ganado"]
+        st.dataframe(
+            resumen[cols].style.format({
+                "Días trabajados": "{:,.0f}",
+                "Días a pagar": "{:,.0f}",
+                "Horas Extra": "{:,.1f}",
+                "Pago por Días": "₡{:,.0f}",
                 "Pago Horas Extra": "₡{:,.0f}",
-                "Total Ganado": "₡{:,.0f}"
-            }), use_container_width=True)
-        else:
-            st.info("No hay jornadas registradas aún.")
+                "Total Ganado": "₡{:,.0f}",
+            }),
+            use_container_width=True
+        )
+    else:
+        st.info("No hay jornadas registradas aún.")
+
 
     # Mostrar insumos separados por tipo
     tipos_insumos = {
@@ -747,9 +762,8 @@ if menu == "Reporte Semanal (Dom–Sáb)":
 
         # Asegurar tipos correctos
         df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-        df["Horas Normales"] = pd.to_numeric(df["Horas Normales"], errors="coerce").fillna(0.0)
         df["Horas Extra"] = pd.to_numeric(df["Horas Extra"], errors="coerce").fillna(0.0)
-        df["Días"] = pd.to_numeric(df["Días"], errors="coerce").fillna(0).astype(int)  # ← NUEVO
+        df["Días"] = pd.to_numeric(df["Días"], errors="coerce").fillna(0).astype(int)
 
         # Filtro por semana (inclusive)
         mask = (df["Fecha"].dt.date >= inicio_sem) & (df["Fecha"].dt.date <= fin_sem)
@@ -758,53 +772,61 @@ if menu == "Reporte Semanal (Dom–Sáb)":
         if df_semana.empty:
             st.info("No hay jornadas en la semana seleccionada.")
         else:
-            # 3) Cálculos por trabajador
+            # 3) Cálculos por trabajador (sin horas normales)
             resumen = df_semana.groupby("Trabajador", as_index=False).agg({
                 "Días": "sum",
-                "Horas Normales": "sum",
                 "Horas Extra": "sum"
             })
+            # Mostrar ambas columnas pedidas
+            resumen = resumen.rename(columns={"Días": "Días trabajados"})
+            resumen["Días a pagar"] = resumen["Días trabajados"]
 
-            resumen["Pago Horas Normales"] = resumen["Días"] * pago_dia
+            # Pagos
+            resumen["Pago por Días"] = resumen["Días a pagar"] * pago_dia
             resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
-            resumen["Total a Pagar"] = resumen["Pago Horas Normales"] + resumen["Pago Horas Extra"]
+            resumen["Total a Pagar"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
 
-            # 4) Tabla detallada de la semana (opcional)
+            # 4) Tabla detallada de la semana (sin horas normales)
             st.markdown("### 📋 Jornadas de la semana (detalle)")
-            df_semana_orden = df_semana.sort_values(["Trabajador", "Fecha"])
-            st.dataframe(
-                df_semana_orden.assign(
-                    Fecha=df_semana_orden["Fecha"].dt.strftime("%Y-%m-%d")
-                ),
-                use_container_width=True
-            )
+            df_semana_orden = df_semana.sort_values(["Trabajador", "Fecha"]).copy()
+            df_detalle = df_semana_orden[["Fecha", "Trabajador", "Lote", "Actividad", "Días", "Horas Extra"]].copy()
+            df_detalle.rename(columns={"Días": "Días trabajados"}, inplace=True)
+            df_detalle["Fecha"] = df_detalle["Fecha"].dt.strftime("%Y-%m-%d")
+            # Si quieres también ver los días a pagar en el detalle:
+            df_detalle["Días a pagar"] = df_detalle["Días trabajados"]
+
+            st.dataframe(df_detalle, use_container_width=True)
 
             # 5) Resumen por trabajador
             st.markdown("### 👥 Resumen por trabajador")
+            cols_orden = [
+                "Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
+                "Pago por Días", "Pago Horas Extra", "Total a Pagar"
+            ]
             st.dataframe(
-                resumen.style.format({
-                    "Días": "{:,.0f}",
-                    "Horas Normales": "{:,.0f}",
+                resumen[cols_orden].style.format({
+                    "Días trabajados": "{:,.0f}",
+                    "Días a pagar": "{:,.0f}",
                     "Horas Extra": "{:,.1f}",
-                    "Pago Horas Normales": "₡{:,.0f}",
+                    "Pago por Días": "₡{:,.0f}",
                     "Pago Horas Extra": "₡{:,.0f}",
                     "Total a Pagar": "₡{:,.0f}"
                 }),
                 use_container_width=True
             )
 
-            # 6) Totales generales de la semana
-            total_normales = resumen["Pago Horas Normales"].sum()
+            # 6) Totales generales de la semana (renombrados)
+            total_dias = resumen["Pago por Días"].sum()
             total_extras = resumen["Pago Horas Extra"].sum()
             total_semana = resumen["Total a Pagar"].sum()
 
             st.markdown("### 🧮 Totales de la semana")
-            st.write(f"- **Total horas normales (₡):** {total_normales:,.0f}")
-            st.write(f"- **Total horas extra (₡):** {total_extras:,.0f}")
+            st.write(f"- **Pago por días (₡):** {total_dias:,.0f}")
+            st.write(f"- **Pago por horas extra (₡):** {total_extras:,.0f}")
             st.write(f"- **Total a pagar (₡):** {total_semana:,.0f}")
 
             # 7) Descargas CSV
-            csv_resumen = resumen.to_csv(index=False).encode("utf-8-sig")
+            csv_resumen = resumen[cols_orden].to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "⬇️ Descargar resumen semanal (CSV)",
                 data=csv_resumen,
@@ -813,12 +835,12 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             )
 
             # (Opcional) Montos por fila en el detalle para el CSV
-            df_semana_orden["Pago Normal (₡)"] = (df_semana_orden["Días"] * pago_dia).round(2)
-            df_semana_orden["Pago Extra (₡)"] = (df_semana_orden["Horas Extra"] * pago_hora_extra).round(2)
-            df_semana_orden["Total Fila (₡)"] = df_semana_orden["Pago Normal (₡)"] + df_semana_orden["Pago Extra (₡)"]
+            df_detalle["Pago por Días (₡)"] = (df_detalle["Días a pagar"] * pago_dia).round(2)
+            df_detalle["Pago Horas Extra (₡)"] = (df_detalle["Horas Extra"] * pago_hora_extra).round(2)
+            df_detalle["Total Fila (₡)"] = df_detalle["Pago por Días (₡)"] + df_detalle["Pago Horas Extra (₡)"]
 
             # CSV detallado
-            csv_detalle = df_semana_orden.to_csv(index=False).encode("utf-8-sig")
+            csv_detalle = df_detalle.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "⬇️ Descargar detalle semanal (CSV)",
                 data=csv_detalle,
@@ -826,8 +848,8 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                 mime="text/csv"
             )
 
-            # ===== 7.3) PDF: Resumen por trabajador (Días, Horas Extra, Total a Pagar) =====
-            resumen_min = resumen[["Trabajador", "Días", "Horas Extra", "Total a Pagar"]].copy()
+            # ===== 7.3) PDF: Resumen por trabajador (Días a pagar, Horas Extra, Total a Pagar) =====
+            resumen_min = resumen[["Trabajador", "Días a pagar", "Horas Extra", "Total a Pagar"]].copy()
 
             def generar_pdf_resumen_trabajador(resumen_min, inicio_sem_str, fin_sem_str):
                 buffer = BytesIO()
@@ -844,9 +866,9 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                 y = height - 110
                 c.setFont("Helvetica-Bold", 11)
                 c.drawString(50,  y, "Trabajador")
-                c.drawString(260, y, "Días")
-                c.drawString(310, y, "Horas Extra")
-                c.drawString(410, y, "Total a pagar (₡)")
+                c.drawString(250, y, "Días a pagar")
+                c.drawString(360, y, "Horas Extra")
+                c.drawString(460, y, "Total a pagar (₡)")
                 c.line(50, y-3, 560, y-3)
 
                 # Filas
@@ -854,15 +876,15 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                 y -= 20
                 for _, row in resumen_min.iterrows():
                     trabajador = str(row["Trabajador"])
-                    dias = f"{row['Días']:.0f}"
+                    dias_pagar = f"{row['Días a pagar']:.0f}"
                     hrs_extra = f"{row['Horas Extra']:.1f}"
                     total = f"{row['Total a Pagar']:,.0f}"
 
                     nombre = (trabajador[:34] + "…") if len(trabajador) > 35 else trabajador
 
                     c.drawString(50,  y, nombre)
-                    c.drawRightString(295, y, dias)
-                    c.drawRightString(375, y, hrs_extra)
+                    c.drawRightString(330, y, dias_pagar)
+                    c.drawRightString(430, y, hrs_extra)
                     c.drawRightString(560, y, total)
 
                     y -= 18
@@ -872,9 +894,9 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                         c.setFont("Helvetica-Bold", 11)
                         y = height - 50
                         c.drawString(50,  y, "Trabajador")
-                        c.drawString(260, y, "Días")
-                        c.drawString(310, y, "Horas Extra")
-                        c.drawString(410, y, "Total a pagar (₡)")
+                        c.drawString(250, y, "Días a pagar")
+                        c.drawString(360, y, "Horas Extra")
+                        c.drawString(460, y, "Total a pagar (₡)")
                         c.line(50, y-3, 560, y-3)
                         c.setFont("Helvetica", 10)
                         y -= 20
@@ -910,6 +932,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
