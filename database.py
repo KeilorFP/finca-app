@@ -440,12 +440,12 @@ def set_tarifas(pago_dia, pago_hora_extra):
         conn.close()
 
 
-# ==== Cierres semanales ====
+# ==== Cierres mensuales (sin anticipos/deducciones) ====
 
 def get_jornadas_entre(fecha_ini, fecha_fin):
     """
-    Retorna jornadas entre fechas (incluidas) como lista de tuplas:
-    (id, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra)
+    Jornadas entre fechas (incluidas).
+    Retorna: (id, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra)
     """
     conn = connect_db()
     cur = conn.cursor()
@@ -461,16 +461,12 @@ def get_jornadas_entre(fecha_ini, fecha_fin):
         conn.close()
 
 
-def crear_cierre_semana(inicio_domingo, fin_sabado, creado_por=""):
+def crear_cierre_mes(mes_ini, mes_fin, creado_por=""):
     """
-    Calcula y fija el pago por trabajador entre inicio y fin,
+    Calcula y fija el pago por trabajador del mes [mes_ini..mes_fin]
     aplicando tarifas globales (get_tarifas()).
-    (Sin anticipos/deducciones)
     """
-    # Traer jornadas de la semana
-    jornadas = get_jornadas_entre(inicio_domingo, fin_sabado)
-
-    # Tarifas globales vigentes
+    jornadas = get_jornadas_entre(mes_ini, mes_fin)
     pago_dia, pago_hex = get_tarifas()
 
     # Acumular por trabajador
@@ -485,20 +481,23 @@ def crear_cierre_semana(inicio_domingo, fin_sabado, creado_por=""):
         by_trab[trab]["m_dias"] += d  * pago_dia
         by_trab[trab]["m_hex"]  += he * pago_hex
 
+    if not by_trab:
+        raise RuntimeError("No hay jornadas en ese mes. No se genera cierre.")
+
     conn = connect_db()
     cur  = conn.cursor()
     try:
         # Insertar/recuperar encabezado del cierre
         cur.execute("""
-            INSERT INTO pagos_semana (semana_ini, semana_fin, creado_por)
+            INSERT INTO pagos_mes (mes_ini, mes_fin, creado_por)
             VALUES (%s, %s, %s)
-            ON CONFLICT (semana_ini, semana_fin) DO NOTHING
+            ON CONFLICT (mes_ini, mes_fin) DO NOTHING
             RETURNING id;
-        """, (inicio_domingo, fin_sabado, creado_por))
+        """, (mes_ini, mes_fin, creado_por))
         row = cur.fetchone()
         if not row:
-            cur.execute("SELECT id FROM pagos_semana WHERE semana_ini=%s AND semana_fin=%s;",
-                        (inicio_domingo, fin_sabado))
+            cur.execute("SELECT id FROM pagos_mes WHERE mes_ini=%s AND mes_fin=%s;",
+                        (mes_ini, mes_fin))
             row = cur.fetchone()
         pago_id = row[0]
 
@@ -507,9 +506,8 @@ def crear_cierre_semana(inicio_domingo, fin_sabado, creado_por=""):
             monto_dias = round(acc["m_dias"], 2)
             monto_hex  = round(acc["m_hex"], 2)
             total      = round(monto_dias + monto_hex, 2)
-
             cur.execute("""
-                INSERT INTO pagos_semana_detalle
+                INSERT INTO pagos_mes_detalle
                 (pago_id, trabajador, dias, horas_extra, monto_dias, monto_hex, total)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT DO NOTHING;
@@ -521,27 +519,27 @@ def crear_cierre_semana(inicio_domingo, fin_sabado, creado_por=""):
         conn.close()
 
 
-def listar_cierres():
+def listar_cierres_mes():
     """
-    Retorna lista de cierres para mostrar en UI:
-    (id, semana_ini, semana_fin, creado_por, created_at)
+    Lista cierres mensuales:
+    (id, mes_ini, mes_fin, creado_por, created_at)
     """
     conn = connect_db()
     cur  = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, semana_ini, semana_fin, creado_por, created_at
-            FROM pagos_semana
-            ORDER BY semana_ini DESC, id DESC;
+            SELECT id, mes_ini, mes_fin, creado_por, created_at
+            FROM pagos_mes
+            ORDER BY mes_ini DESC, id DESC;
         """)
         return cur.fetchall()
     finally:
         conn.close()
 
 
-def get_cierre_detalle(pago_id):
+def get_cierre_mes_detalle(pago_id):
     """
-    Retorna detalle del cierre (por trabajador):
+    Detalle por trabajador del cierre mensual:
     (trabajador, dias, horas_extra, monto_dias, monto_hex, total)
     """
     conn = connect_db()
@@ -549,13 +547,15 @@ def get_cierre_detalle(pago_id):
     try:
         cur.execute("""
             SELECT trabajador, dias, horas_extra, monto_dias, monto_hex, total
-            FROM pagos_semana_detalle
+            FROM pagos_mes_detalle
             WHERE pago_id=%s
             ORDER BY trabajador;
         """, (pago_id,))
         return cur.fetchall()
     finally:
         conn.close()
+
+
 
 
 
