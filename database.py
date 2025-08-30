@@ -377,3 +377,68 @@ def update_herbicida(id, fecha, lote, etapa, producto, dosis, cantidad, precio_u
         conn.close()
 
 
+# === TARIFAS GLOBALES (persisten en Supabase) ===
+def create_tarifas_table():
+    """
+    Crea la tabla 'tarifas' si no existe e inserta la fila única id=1 con valores por defecto.
+    """
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tarifas (
+                id INTEGER PRIMARY KEY,
+                pago_dia NUMERIC NOT NULL,
+                pago_hora_extra NUMERIC NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        """)
+        # Fila única (id=1). Cambia 9000/2000 si quieres defaults distintos.
+        cur.execute("""
+            INSERT INTO tarifas (id, pago_dia, pago_hora_extra)
+            VALUES (1, 9000, 2000)
+            ON CONFLICT (id) DO NOTHING;
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_tarifas():
+    """
+    Devuelve (pago_dia, pago_hora_extra) como floats.
+    """
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT pago_dia, pago_hora_extra FROM tarifas WHERE id = 1;")
+        row = cur.fetchone()
+        if not row:
+            return 9000.0, 2000.0
+        return float(row[0]), float(row[1])
+    finally:
+        conn.close()
+
+
+def set_tarifas(pago_dia, pago_hora_extra):
+    """
+    Actualiza la fila única con las nuevas tarifas.
+    """
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO tarifas (id, pago_dia, pago_hora_extra, updated_at)
+            VALUES (1, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE
+            SET pago_dia = EXCLUDED.pago_dia,
+                pago_hora_extra = EXCLUDED.pago_hora_extra,
+                updated_at = NOW();
+        """, (pago_dia, pago_hora_extra))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+
+
