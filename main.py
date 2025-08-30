@@ -6,10 +6,12 @@ from streamlit_option_menu import option_menu
 import datetime
 import datetime as dt
 
+
 # IMPORTS PARA PDF
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from database import create_tarifas_table, get_tarifas, set_tarifas
 
 # En Railway usamos variable de entorno; si no existe, intentamos leer de st.secrets (solo en Streamlit Cloud)
 if not os.getenv("DATABASE_URL"):
@@ -132,6 +134,8 @@ create_users_table()
 create_jornadas_table()
 create_insumos_table()
 create_trabajadores_table()
+create_tarifas_table()
+
 
 import streamlit as st
 
@@ -235,7 +239,8 @@ with st.sidebar:
             "Registrar Herbicida",
             "Ver Registros",
             "Añadir Empleado",
-            "Reporte Semanal (Dom–Sáb)"
+            "Reporte Semanal (Dom–Sáb)",
+            "Tarifas"
         ],
         icons=[
             "calendar-check",  # Jornada
@@ -245,7 +250,8 @@ with st.sidebar:
             "droplet",         # Herbicida
             "journal-text",    # Ver Registros
             "person-plus",     # Añadir Empleado
-            "bar-chart"        # Reporte
+            "bar-chart" ,
+            "cash"# Reporte
         ],
         default_index=0,
         orientation="vertical",
@@ -270,6 +276,19 @@ with st.sidebar:
             },
         }
     )
+
+#Formulario Tarifas
+if menu == "Tarifas":
+    st.subheader("⚙️ Tarifas globales")
+    pago_dia_actual, pago_hex_actual = get_tarifas()
+    with st.form("form_tarifas"):
+        pago_dia = st.number_input("Pago por DÍA (6 horas normales)", min_value=0.0, step=100.0, value=float(pago_dia_actual))
+        pago_hora_extra = st.number_input("Pago por HORA EXTRA", min_value=0.0, step=50.0, value=float(pago_hex_actual))
+        guardar = st.form_submit_button("Guardar tarifas")
+        if guardar:
+            set_tarifas(pago_dia, pago_hora_extra)
+            st.success("✅ Tarifas guardadas. Se aplican en toda la app.")
+
 
 # FORMULARIO DE AÑADIR EMPLEADO
 if menu == "Añadir Empleado":
@@ -455,9 +474,9 @@ def mostrar_insumos_por_tipo(tipo_nombre, columnas):
 if menu == "Ver Registros":
     st.subheader("📊 Registros de Jornadas e Insumos")
 
-    with st.expander("💰 Configurar tarifas por hora"):
-        valor_hora_normal = st.number_input("Valor por hora normal (₡)", min_value=0, step=100, value=1500)
-        valor_hora_extra = st.number_input("Valor por hora extra (₡)", min_value=0, step=100, value=2000)
+    pago_dia, pago_hora_extra = get_tarifas()
+    st.info(f"Tarifas actuales → Día (6h): ₡{pago_dia:,.0f} | Hora extra: ₡{pago_hora_extra:,.0f}")
+
 
     # Mostrar registros de jornadas
     with st.expander("📋 Ver Jornadas Registradas"):
@@ -471,8 +490,8 @@ if menu == "Ver Registros":
                 "Horas Normales": "sum",
                 "Horas Extra": "sum"
             }).reset_index()
-            resumen["Pago Horas Normales"] = resumen["Horas Normales"] * valor_hora_normal
-            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * valor_hora_extra
+            resumen["Pago Horas Normales"] = resumen["Días"] * pago_dia
+            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
             resumen["Total Ganado"] = resumen["Pago Horas Normales"] + resumen["Pago Horas Extra"]
 
             st.markdown("### 👥 Resumen por Trabajador")
@@ -693,7 +712,7 @@ if menu == "Registrar Herbicida":
             st.info("No hay registros de herbicida para editar.")
 
 # ============================================================================
-# REPORETE SEMANAL (Domingo a Sábado) - Salarios por trabajador
+# REPORTE SEMANAL (Domingo a Sábado) - Salarios por trabajador
 # ============================================================================
 if menu == "Reporte Semanal (Dom–Sáb)":
     st.subheader("💵 Reporte Semanal de Salarios (Domingo a Sábado)")
@@ -714,11 +733,8 @@ if menu == "Reporte Semanal (Dom–Sáb)":
 
     st.info(f"📅 Semana seleccionada: **{inicio_sem.strftime('%Y-%m-%d')}** a **{fin_sem.strftime('%Y-%m-%d')}** (Dom–Sáb)")
 
-    col_tar1, col_tar2 = st.columns(2)
-    with col_tar1:
-        valor_hora_normal = st.number_input("Valor por hora normal (₡)", min_value=0, step=100, value=1500)
-    with col_tar2:
-        valor_hora_extra = st.number_input("Valor por hora extra (₡)", min_value=0, step=100, value=2000)
+    pago_dia, pago_hora_extra = get_tarifas()
+    st.info(f"Tarifas aplicadas esta semana → Día (6h): ₡{pago_dia:,.0f} | Hora extra: ₡{pago_hora_extra:,.0f}")
 
     # 2) Traer jornadas y filtrar por semana
     jornadas = get_all_jornadas()
@@ -733,6 +749,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
         df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
         df["Horas Normales"] = pd.to_numeric(df["Horas Normales"], errors="coerce").fillna(0.0)
         df["Horas Extra"] = pd.to_numeric(df["Horas Extra"], errors="coerce").fillna(0.0)
+        df["Días"] = pd.to_numeric(df["Días"], errors="coerce").fillna(0).astype(int)  # ← NUEVO
 
         # Filtro por semana (inclusive)
         mask = (df["Fecha"].dt.date >= inicio_sem) & (df["Fecha"].dt.date <= fin_sem)
@@ -748,8 +765,8 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                 "Horas Extra": "sum"
             })
 
-            resumen["Pago Horas Normales"] = resumen["Horas Normales"] * valor_hora_normal
-            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * valor_hora_extra
+            resumen["Pago Horas Normales"] = resumen["Días"] * pago_dia
+            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
             resumen["Total a Pagar"] = resumen["Pago Horas Normales"] + resumen["Pago Horas Extra"]
 
             # 4) Tabla detallada de la semana (opcional)
@@ -795,7 +812,12 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                 mime="text/csv"
             )
 
-            # Un CSV detallado también (opcional)
+            # (Opcional) Montos por fila en el detalle para el CSV
+            df_semana_orden["Pago Normal (₡)"] = (df_semana_orden["Días"] * pago_dia).round(2)
+            df_semana_orden["Pago Extra (₡)"] = (df_semana_orden["Horas Extra"] * pago_hora_extra).round(2)
+            df_semana_orden["Total Fila (₡)"] = df_semana_orden["Pago Normal (₡)"] + df_semana_orden["Pago Extra (₡)"]
+
+            # CSV detallado
             csv_detalle = df_semana_orden.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "⬇️ Descargar detalle semanal (CSV)",
@@ -805,7 +827,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             )
 
             # ===== 7.3) PDF: Resumen por trabajador (Días, Horas Extra, Total a Pagar) =====
-            # Tomamos solo las columnas solicitadas
             resumen_min = resumen[["Trabajador", "Días", "Horas Extra", "Total a Pagar"]].copy()
 
             def generar_pdf_resumen_trabajador(resumen_min, inicio_sem_str, fin_sem_str):
@@ -837,7 +858,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
                     hrs_extra = f"{row['Horas Extra']:.1f}"
                     total = f"{row['Total a Pagar']:,.0f}"
 
-                    # Ajuste simple para nombres largos (evita desbordes)
                     nombre = (trabajador[:34] + "…") if len(trabajador) > 35 else trabajador
 
                     c.drawString(50,  y, nombre)
@@ -879,6 +899,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             )
 
 
+
             
     
 
@@ -889,6 +910,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
