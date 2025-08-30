@@ -246,7 +246,7 @@ st.title("📋 Panel de Control - Finca Cafetalera")
 st.write(f"👤 Usuario: **{st.session_state.user}**")
 
 
-#menu bottons
+# --- MENÚ LATERAL ---
 with st.sidebar:
     st.markdown("## 🧭 Menú Principal")
     menu = option_menu(
@@ -260,31 +260,31 @@ with st.sidebar:
             "Ver Registros",
             "Añadir Empleado",
             "Reporte Semanal (Dom–Sáb)",
-            "Tarifas"
+            "Tarifas",
         ],
         icons=[
             "calendar-check",  # Jornada
-            "fuel-pump",            # Abono
-            "bezier",             # Fumigación
-            "gem",          # Cal
+            "fuel-pump",       # Abono
+            "bezier",          # Fumigación
+            "gem",             # Cal
             "droplet",         # Herbicida
             "journal-text",    # Ver Registros
             "person-plus",     # Añadir Empleado
-            "bar-chart" ,
-            "cash"# Reporte
+            "bar-chart",       # Reporte
+            "cash",            # Tarifas
         ],
         default_index=0,
         orientation="vertical",
         styles={
             "container": {"padding": "0!important", "background": "rgba(0,0,0,0)"},
-            "icon": {"font-size": "18px", "color": "#10b981"},   # ← iconos verdes
+            "icon": {"font-size": "18px", "color": "#10b981"},
             "nav-link": {
                 "font-size": "15px",
                 "padding": "10px 12px",
                 "border-radius": "12px",
                 "margin": "6px 0",
-                "color": "#e5e7eb",              # texto claro
-                "background-color": "#111827",   # gris oscuro
+                "color": "#e5e7eb",
+                "background-color": "#111827",
                 "border": "1px solid #374151",
             },
             "nav-link-selected": {
@@ -294,7 +294,7 @@ with st.sidebar:
                 "border": "1px solid #10b981",
                 "box-shadow": "0 4px 18px rgba(16,185,129,.25)",
             },
-        }
+        },
     )
 
 # --- Auto-colapsar cuando se selecciona algo del menú ---
@@ -303,7 +303,7 @@ if "_last_menu" not in st.session_state:
 
 if menu != st.session_state["_last_menu"]:
     st.session_state["_last_menu"] = menu
-    _collapse_sidebar_once()   # ⬅️ oculta el menú automáticamente
+    _collapse_sidebar_once()  # Oculta el menú automáticamente
 
 #Formulario Tarifas
 if menu == "Tarifas":
@@ -1045,6 +1045,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
