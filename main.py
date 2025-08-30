@@ -33,6 +33,8 @@ from database import get_last_abono_by_date, update_abono
 from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
+from database import create_pagos_tables, crear_cierre_mes, listar_cierres_mes, get_cierre_mes_detalle
+
 
 #Facilidad para movil
 
@@ -138,6 +140,8 @@ create_jornadas_table()
 create_insumos_table()
 create_trabajadores_table()
 create_tarifas_table()
+create_pagos_tables()
+
 
 
 import streamlit as st
@@ -1075,6 +1079,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
