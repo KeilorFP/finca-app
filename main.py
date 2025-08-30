@@ -537,12 +537,11 @@ if menu == "Ver Registros":
         "Cal": "🧱 Ver Cal",
         "Herbicida": "🌾 Ver Herbicidas",
     }
-
+    
     for tipo, titulo in tipos_insumos.items():
         with st.expander(titulo):
-            conn = connect_db()  # requiere: from database import connect_db
+            conn = connect_db()  # importa arriba: from database import connect_db
             cur = conn.cursor()
-            # Postgres usa %s y la tupla (tipo,) como parámetro
             cur.execute(
                 """
                 SELECT id, fecha, lote, tipo, etapa, producto, dosis,
@@ -555,7 +554,7 @@ if menu == "Ver Registros":
             )
             registros = cur.fetchall()
             conn.close()
-
+    
             if registros:
                 df_insumos = pd.DataFrame(
                     registros,
@@ -564,7 +563,8 @@ if menu == "Ver Registros":
                         "Dosis", "Cantidad", "Precio Unitario", "Costo Total",
                     ],
                 )
-                # Formatea fecha si viene como date/datetime
+    
+                # Fecha legible
                 try:
                     df_insumos["Fecha"] = (
                         pd.to_datetime(df_insumos["Fecha"], errors="coerce")
@@ -572,10 +572,44 @@ if menu == "Ver Registros":
                     )
                 except Exception:
                     pass
-
-                st.dataframe(df_insumos, use_container_width=True)
+    
+                # Renombrar columnas según el tipo para que coincidan con el formulario de registro
+                if tipo == "Fumigación":
+                    df_insumos = df_insumos.rename(columns={
+                        "Etapa": "Plaga / control",
+                        "Cantidad": "Litros",
+                        "Precio Unitario": "Precio por litro (₡)",
+                    })
+                elif tipo == "Herbicida":
+                    df_insumos = df_insumos.rename(columns={
+                        "Etapa": "Tipo de herbicida",
+                        "Cantidad": "Litros",
+                        "Precio Unitario": "Precio por litro (₡)",
+                    })
+                elif tipo == "Cal":
+                    df_insumos = df_insumos.rename(columns={
+                        "Etapa": "Tipo de cal",
+                        "Producto": "Presentación",
+                        "Cantidad": "Sacos (45 kg)",
+                        "Precio Unitario": "Precio por saco (₡)",
+                    })
+                elif tipo == "Abono":
+                    df_insumos = df_insumos.rename(columns={
+                        "Etapa": "Etapa de abonado",
+                        "Dosis": "Dosis (g/planta)",
+                        "Cantidad": "Sacos",
+                        "Precio Unitario": "Precio por saco (₡)",
+                    })
+    
+                # (Opcional) formateo de moneda
+                money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"] if c in df_insumos.columns]
+                st.dataframe(
+                    df_insumos.style.format({col: "₡{:,.0f}" for col in money_cols}),
+                    use_container_width=True,
+                )
             else:
                 st.info(f"No hay insumos registrados aún para {tipo.lower()}.")
+
 
 
 
@@ -966,6 +1000,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
