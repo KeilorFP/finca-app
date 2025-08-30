@@ -12,6 +12,8 @@ from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from database import create_tarifas_table, get_tarifas, set_tarifas
+from database import connect_db
+
 
 # En Railway usamos variable de entorno; si no existe, intentamos leer de st.secrets (solo en Streamlit Cloud)
 if not os.getenv("DATABASE_URL"):
@@ -470,41 +472,50 @@ def mostrar_insumos_por_tipo(tipo_nombre, columnas):
     else:
         st.info(f"No hay registros de {tipo_nombre.lower()} aún.")
 
+# ============================
 # SECCIÓN DE REGISTROS
+# ============================
 if menu == "Ver Registros":
     st.subheader("📊 Registros de Jornadas e Insumos")
 
+    # Tarifas globales (día y hora extra)
     pago_dia, pago_hora_extra = get_tarifas()
     st.info(f"Tarifas actuales → Día (6h): ₡{pago_dia:,.0f} | Hora extra: ₡{pago_hora_extra:,.0f}")
 
-# Mostrar registros de jornadas
+    # ---- Jornadas ----
     with st.expander("📋 Ver Jornadas Registradas"):
         jornadas = get_all_jornadas()
         if jornadas:
-            df_jornadas = pd.DataFrame(jornadas, columns=[
-                "ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"
-            ])
-    
-            # Tipos correctos y sin horas normales en los cálculos
+            df_jornadas = pd.DataFrame(
+                jornadas,
+                columns=[
+                    "ID", "Trabajador", "Fecha", "Lote", "Actividad",
+                    "Días", "Horas Normales", "Horas Extra"
+                ],
+            )
+
+            # Tipos correctos y SIN usar Horas Normales en pagos
             df_jornadas["Días"] = pd.to_numeric(df_jornadas["Días"], errors="coerce").fillna(0).astype(int)
             df_jornadas["Horas Extra"] = pd.to_numeric(df_jornadas["Horas Extra"], errors="coerce").fillna(0.0)
-    
+
             # Resumen por trabajador: solo días y horas extra
             resumen = df_jornadas.groupby("Trabajador", as_index=False).agg({
                 "Días": "sum",
-                "Horas Extra": "sum"
+                "Horas Extra": "sum",
             })
             resumen = resumen.rename(columns={"Días": "Días trabajados"})
             resumen["Días a pagar"] = resumen["Días trabajados"]
-    
+
             # Pagos con tarifas globales
             resumen["Pago por Días"] = resumen["Días a pagar"] * pago_dia
             resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
             resumen["Total Ganado"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
-    
+
             st.markdown("### 👥 Resumen por Trabajador")
-            cols = ["Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
-                    "Pago por Días", "Pago Horas Extra", "Total Ganado"]
+            cols = [
+                "Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
+                "Pago por Días", "Pago Horas Extra", "Total Ganado",
+            ]
             st.dataframe(
                 resumen[cols].style.format({
                     "Días trabajados": "{:,.0f}",
@@ -514,10 +525,58 @@ if menu == "Ver Registros":
                     "Pago Horas Extra": "₡{:,.0f}",
                     "Total Ganado": "₡{:,.0f}",
                 }),
-                use_container_width=True
+                use_container_width=True,
             )
         else:
             st.info("No hay jornadas registradas aún.")
+
+    # ---- Insumos por tipo (Abono, Fumigación, Cal, Herbicida) ----
+    tipos_insumos = {
+        "Abono": "🌿 Ver Abonos",
+        "Fumigación": "🧪 Ver Fumigaciones",
+        "Cal": "🧱 Ver Cal",
+        "Herbicida": "🌾 Ver Herbicidas",
+    }
+
+    for tipo, titulo in tipos_insumos.items():
+        with st.expander(titulo):
+            conn = connect_db()  # requiere: from database import connect_db
+            cur = conn.cursor()
+            # Postgres usa %s y la tupla (tipo,) como parámetro
+            cur.execute(
+                """
+                SELECT id, fecha, lote, tipo, etapa, producto, dosis,
+                       cantidad, precio_unitario, costo_total
+                FROM insumos
+                WHERE tipo = %s
+                ORDER BY fecha DESC, id DESC;
+                """,
+                (tipo,),
+            )
+            registros = cur.fetchall()
+            conn.close()
+
+            if registros:
+                df_insumos = pd.DataFrame(
+                    registros,
+                    columns=[
+                        "ID", "Fecha", "Lote", "Tipo", "Etapa", "Producto",
+                        "Dosis", "Cantidad", "Precio Unitario", "Costo Total",
+                    ],
+                )
+                # Formatea fecha si viene como date/datetime
+                try:
+                    df_insumos["Fecha"] = (
+                        pd.to_datetime(df_insumos["Fecha"], errors="coerce")
+                        .dt.strftime("%Y-%m-%d")
+                    )
+                except Exception:
+                    pass
+
+                st.dataframe(df_insumos, use_container_width=True)
+            else:
+                st.info(f"No hay insumos registrados aún para {tipo.lower()}.")
+
 
 
 
@@ -907,6 +966,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
