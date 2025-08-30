@@ -477,73 +477,48 @@ if menu == "Ver Registros":
     pago_dia, pago_hora_extra = get_tarifas()
     st.info(f"Tarifas actuales → Día (6h): ₡{pago_dia:,.0f} | Hora extra: ₡{pago_hora_extra:,.0f}")
 
-
-    # Mostrar registros de jornadas
+# Mostrar registros de jornadas
     with st.expander("📋 Ver Jornadas Registradas"):
-    jornadas = get_all_jornadas()
-    if jornadas:
-        df_jornadas = pd.DataFrame(jornadas, columns=[
-            "ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"
-        ])
+        jornadas = get_all_jornadas()
+        if jornadas:
+            df_jornadas = pd.DataFrame(jornadas, columns=[
+                "ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"
+            ])
+    
+            # Tipos correctos y sin horas normales en los cálculos
+            df_jornadas["Días"] = pd.to_numeric(df_jornadas["Días"], errors="coerce").fillna(0).astype(int)
+            df_jornadas["Horas Extra"] = pd.to_numeric(df_jornadas["Horas Extra"], errors="coerce").fillna(0.0)
+    
+            # Resumen por trabajador: solo días y horas extra
+            resumen = df_jornadas.groupby("Trabajador", as_index=False).agg({
+                "Días": "sum",
+                "Horas Extra": "sum"
+            })
+            resumen = resumen.rename(columns={"Días": "Días trabajados"})
+            resumen["Días a pagar"] = resumen["Días trabajados"]
+    
+            # Pagos con tarifas globales
+            resumen["Pago por Días"] = resumen["Días a pagar"] * pago_dia
+            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
+            resumen["Total Ganado"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
+    
+            st.markdown("### 👥 Resumen por Trabajador")
+            cols = ["Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
+                    "Pago por Días", "Pago Horas Extra", "Total Ganado"]
+            st.dataframe(
+                resumen[cols].style.format({
+                    "Días trabajados": "{:,.0f}",
+                    "Días a pagar": "{:,.0f}",
+                    "Horas Extra": "{:,.1f}",
+                    "Pago por Días": "₡{:,.0f}",
+                    "Pago Horas Extra": "₡{:,.0f}",
+                    "Total Ganado": "₡{:,.0f}",
+                }),
+                use_container_width=True
+            )
+        else:
+            st.info("No hay jornadas registradas aún.")
 
-        # Tipos correctos y sin horas normales en los cálculos
-        df_jornadas["Días"] = pd.to_numeric(df_jornadas["Días"], errors="coerce").fillna(0).astype(int)
-        df_jornadas["Horas Extra"] = pd.to_numeric(df_jornadas["Horas Extra"], errors="coerce").fillna(0.0)
-
-        # Resumen por trabajador: solo días y horas extra
-        resumen = df_jornadas.groupby("Trabajador", as_index=False).agg({
-            "Días": "sum",
-            "Horas Extra": "sum"
-        })
-        resumen = resumen.rename(columns={"Días": "Días trabajados"})
-        resumen["Días a pagar"] = resumen["Días trabajados"]
-
-        # Pagos con tarifas globales
-        resumen["Pago por Días"] = resumen["Días a pagar"] * pago_dia
-        resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hora_extra
-        resumen["Total Ganado"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
-
-        st.markdown("### 👥 Resumen por Trabajador")
-        cols = ["Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
-                "Pago por Días", "Pago Horas Extra", "Total Ganado"]
-        st.dataframe(
-            resumen[cols].style.format({
-                "Días trabajados": "{:,.0f}",
-                "Días a pagar": "{:,.0f}",
-                "Horas Extra": "{:,.1f}",
-                "Pago por Días": "₡{:,.0f}",
-                "Pago Horas Extra": "₡{:,.0f}",
-                "Total Ganado": "₡{:,.0f}",
-            }),
-            use_container_width=True
-        )
-    else:
-        st.info("No hay jornadas registradas aún.")
-
-
-    # Mostrar insumos separados por tipo
-    tipos_insumos = {
-        "Abono": "🌿 Ver Abonados Aplicados",
-        "Fumigación": "🧪 Ver Fumigaciones Aplicadas",
-        "Cal": "🧱 Ver Cal Aplicada",
-        "Herbicida": "🌾 Ver Herbicidas Aplicados"
-    }
-
-    for tipo, titulo in tipos_insumos.items():
-        with st.expander(titulo):
-            from database import connect_db
-            conn = connect_db()
-            c = conn.cursor()
-            c.execute("SELECT * FROM insumos WHERE tipo = %s ORDER BY fecha DESC;", (tipo,))
-            registros = c.fetchall()
-            conn.close()
-            if registros:
-                df_insumos = pd.DataFrame(registros, columns=[
-                    "ID", "Fecha", "Lote", "Tipo", "Etapa", "Producto", "Dosis", "Cantidad", "Precio Unitario", "Costo Total"
-                ])
-                st.dataframe(df_insumos, use_container_width=True)
-            else:
-                st.info(f"No hay insumos registrados aún para {tipo.lower()}.")
 
 
 # FORMULARIO DE FUMIGACIÓN
@@ -932,6 +907,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
