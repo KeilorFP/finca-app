@@ -488,13 +488,14 @@ if menu == "Ver Registros":
         if jornadas:
             df_jornadas = pd.DataFrame(
                 jornadas,
-                columns=[
-                    "ID", "Trabajador", "Fecha", "Lote", "Actividad",
-                    "Días", "Horas Normales", "Horas Extra"
-                ],
+                columns=["ID", "Trabajador", "Fecha", "Lote", "Actividad", "Días", "Horas Normales", "Horas Extra"],
             )
 
             # Tipos correctos y SIN usar Horas Normales en pagos
+            try:
+                df_jornadas["Fecha"] = pd.to_datetime(df_jornadas["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
             df_jornadas["Días"] = pd.to_numeric(df_jornadas["Días"], errors="coerce").fillna(0).astype(int)
             df_jornadas["Horas Extra"] = pd.to_numeric(df_jornadas["Horas Extra"], errors="coerce").fillna(0.0)
 
@@ -512,24 +513,12 @@ if menu == "Ver Registros":
             resumen["Total Ganado"] = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
 
             st.markdown("### 👥 Resumen por Trabajador")
-            cols = [
+            cols_resumen = [
                 "Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
                 "Pago por Días", "Pago Horas Extra", "Total Ganado",
             ]
-            # Columnas a formatear si existen en el DF
-            money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"] if c in df_insumos.columns]
-            qty_cols   = [c for c in ["Litros", "Sacos (45 kg)", "Sacos", "Cantidad"] if c in df_insumos.columns]
-            dose_cols  = [c for c in ["Dosis", "Dosis (g/planta)"] if c in df_insumos.columns]
-            
-            fmt = {}
-            fmt.update({col: "₡{:,.0f}" for col in money_cols})  # dinero sin decimales
-            fmt.update({col: "{:,.1f}"  for col in qty_cols})    # 1 decimal para litros/sacos
-            fmt.update({col: "{:,.0f}"  for col in dose_cols})   # 0 decimales para dosis
-            
-            st.dataframe(df_insumos.style.format(fmt), use_container_width=True)
-
             st.dataframe(
-                resumen[cols].style.format({
+                resumen[cols_resumen].style.format({
                     "Días trabajados": "{:,.0f}",
                     "Días a pagar": "{:,.0f}",
                     "Horas Extra": "{:,.1f}",
@@ -537,6 +526,12 @@ if menu == "Ver Registros":
                     "Pago Horas Extra": "₡{:,.0f}",
                     "Total Ganado": "₡{:,.0f}",
                 }),
+                use_container_width=True,
+            )
+
+            st.markdown("### 🧾 Detalle de Jornadas")
+            st.dataframe(
+                df_jornadas[["Fecha", "Trabajador", "Lote", "Actividad", "Días", "Horas Extra"]],
                 use_container_width=True,
             )
         else:
@@ -549,10 +544,10 @@ if menu == "Ver Registros":
         "Cal": "🧱 Ver Cal",
         "Herbicida": "🌾 Ver Herbicidas",
     }
-    
+
     for tipo, titulo in tipos_insumos.items():
         with st.expander(titulo):
-            conn = connect_db()  # importa arriba: from database import connect_db
+            conn = connect_db()
             cur = conn.cursor()
             cur.execute(
                 """
@@ -566,7 +561,7 @@ if menu == "Ver Registros":
             )
             registros = cur.fetchall()
             conn.close()
-    
+
             if registros:
                 df_insumos = pd.DataFrame(
                     registros,
@@ -575,20 +570,17 @@ if menu == "Ver Registros":
                         "Dosis", "Cantidad", "Precio Unitario", "Costo Total",
                     ],
                 )
-    
+
                 # Fecha legible
                 try:
-                    df_insumos["Fecha"] = (
-                        pd.to_datetime(df_insumos["Fecha"], errors="coerce")
-                        .dt.strftime("%Y-%m-%d")
-                    )
+                    df_insumos["Fecha"] = pd.to_datetime(df_insumos["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
                 except Exception:
                     pass
-    
-                # Renombrar columnas según el tipo para que coincidan con el formulario de registro
+
+                # Renombrar columnas para que coincidan con los formularios
                 if tipo == "Fumigación":
                     df_insumos = df_insumos.rename(columns={
-                        "Etapa": "Plaga / control",
+                        "Etapa": "Plaga/Control",
                         "Cantidad": "Litros",
                         "Precio Unitario": "Precio por litro (₡)",
                     })
@@ -612,15 +604,30 @@ if menu == "Ver Registros":
                         "Cantidad": "Sacos",
                         "Precio Unitario": "Precio por saco (₡)",
                     })
-    
-                # (Opcional) formateo de moneda
-                money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"] if c in df_insumos.columns]
-                st.dataframe(
-                    df_insumos.style.format({col: "₡{:,.0f}" for col in money_cols}),
-                    use_container_width=True,
-                )
+
+                # Conversión numérica para formateo
+                for col in df_insumos.columns:
+                    if col in ["Litros", "Sacos (45 kg)", "Sacos", "Cantidad", "Dosis", "Dosis (g/planta)",
+                               "Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"]:
+                        df_insumos[col] = pd.to_numeric(df_insumos[col], errors="coerce")
+
+                # Formatos: dinero sin decimales; litros/sacos 1 decimal; dosis 0 decimales
+                money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"]
+                              if c in df_insumos.columns]
+                qty_cols = [c for c in ["Litros", "Sacos (45 kg)", "Sacos", "Cantidad"]
+                            if c in df_insumos.columns]
+                dose_cols = [c for c in ["Dosis", "Dosis (g/planta)"]
+                             if c in df_insumos.columns]
+
+                fmt = {}
+                fmt.update({col: "₡{:,.0f}" for col in money_cols})
+                fmt.update({col: "{:,.1f}" for col in qty_cols})
+                fmt.update({col: "{:,.0f}" for col in dose_cols})
+
+                st.dataframe(df_insumos.style.format(fmt), use_container_width=True)
             else:
                 st.info(f"No hay insumos registrados aún para {tipo.lower()}.")
+
 
 
 
@@ -1012,6 +1019,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
