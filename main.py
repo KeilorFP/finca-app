@@ -244,6 +244,7 @@ with st.sidebar:
             "Añadir Empleado",
             "Reporte Semanal (Dom–Sáb)",
             "Tarifas",
+            "Cierres Mensuales"
         ],
         icons=[
             "calendar-check",  # Jornada
@@ -255,6 +256,7 @@ with st.sidebar:
             "person-plus",     # Añadir Empleado
             "bar-chart",       # Reporte
             "cash",            # Tarifas
+            "calendar-month"   #cierres
         ],
         default_index=0,
         orientation="vertical",
@@ -310,6 +312,59 @@ if menu == "Añadir Empleado":
                     st.success("✅ Empleado registrado exitosamente.")
                 except Exception as e:
                     st.error(f"❌ Error al registrar empleado: {str(e)}")
+
+
+# ======= CIERRES MENSUALES =======
+if menu == "Cierres Mensuales":
+    st.subheader("🗓️ Cierre mensual")
+
+    # Helper para rango del mes
+    def rango_mes(d: datetime.date):
+        primero = d.replace(day=1)
+        # siguiente mes: ir al día 28 y sumar 4 → garantizas pasar al próximo mes
+        prox_mes = (primero.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+        ultimo = prox_mes - datetime.timedelta(days=1)
+        return primero, ultimo
+
+    hoy = datetime.date.today()
+    fecha_ref = st.date_input("Elige cualquier fecha dentro del mes a cerrar", hoy)
+    mes_ini, mes_fin = rango_mes(fecha_ref)
+    st.info(f"Mes a cerrar: **{mes_ini.strftime('%Y-%m-%d')}** a **{mes_fin.strftime('%Y-%m-%d')}**")
+
+    if st.button("✅ Cerrar mes"):
+        try:
+            pid = crear_cierre_mes(str(mes_ini), str(mes_fin), creado_por=st.session_state.user)
+            st.success(f"Cierre mensual creado. ID: {pid}")
+        except Exception as e:
+            st.error(f"No se pudo cerrar el mes: {e}")
+
+    st.markdown("### Cierres mensuales realizados")
+    cierres = listar_cierres_mes()
+    if cierres:
+        dfc = pd.DataFrame(cierres, columns=["ID","Desde","Hasta","Creado por","Creado en"])
+        dfc["Desde"] = pd.to_datetime(dfc["Desde"]).dt.strftime("%Y-%m-%d")
+        dfc["Hasta"] = pd.to_datetime(dfc["Hasta"]).dt.strftime("%Y-%m-%d")
+        st.dataframe(dfc, use_container_width=True)
+
+        cid = st.selectbox("Ver detalle de cierre", dfc["ID"])
+        if st.button("Mostrar detalle"):
+            det = get_cierre_mes_detalle(int(cid))
+            if det:
+                dfd = pd.DataFrame(det, columns=[
+                    "Trabajador","Días","Horas Extra","Monto días","Monto hex","Total"
+                ])
+                st.dataframe(
+                    dfd.style.format({
+                        "Monto días":"₡{:,.0f}",
+                        "Monto hex":"₡{:,.0f}",
+                        "Total":"₡{:,.0f}"
+                    }),
+                    use_container_width=True
+                )
+            else:
+                st.info("Sin detalle.")
+    else:
+        st.info("Aún no hay cierres mensuales.")
 
 
 #Formulario jornada
@@ -1020,6 +1075,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
