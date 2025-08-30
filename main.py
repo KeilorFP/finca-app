@@ -516,6 +516,18 @@ if menu == "Ver Registros":
                 "Trabajador", "Días trabajados", "Días a pagar", "Horas Extra",
                 "Pago por Días", "Pago Horas Extra", "Total Ganado",
             ]
+            # Columnas a formatear si existen en el DF
+            money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"] if c in df_insumos.columns]
+            qty_cols   = [c for c in ["Litros", "Sacos (45 kg)", "Sacos", "Cantidad"] if c in df_insumos.columns]
+            dose_cols  = [c for c in ["Dosis", "Dosis (g/planta)"] if c in df_insumos.columns]
+            
+            fmt = {}
+            fmt.update({col: "₡{:,.0f}" for col in money_cols})  # dinero sin decimales
+            fmt.update({col: "{:,.1f}"  for col in qty_cols})    # 1 decimal para litros/sacos
+            fmt.update({col: "{:,.0f}"  for col in dose_cols})   # 0 decimales para dosis
+            
+            st.dataframe(df_insumos.style.format(fmt), use_container_width=True)
+
             st.dataframe(
                 resumen[cols].style.format({
                     "Días trabajados": "{:,.0f}",
@@ -1000,6 +1012,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
