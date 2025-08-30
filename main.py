@@ -13,7 +13,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from database import create_tarifas_table, get_tarifas, set_tarifas
 from database import connect_db
-import streamlit.components.v1 as components
 
 
 
@@ -103,22 +102,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
-#Ocultar el boton
-def _collapse_sidebar_once():
-    components.html(
-        """
-        <script>
-        const btn =
-          window.parent.document.querySelector('[data-testid="baseButton-headerNoPadding"]') ||
-          window.parent.document.querySelector('[data-testid="baseButton-header"]') ||
-          window.parent.document.querySelector('button[title="Hide sidebar"]') ||
-          window.parent.document.querySelector('button[aria-label="Hide sidebar"]');
-        if (btn) btn.click();
-        </script>
-        """,
-        height=0, width=0
-    )
 
 
 # Codigos reutilizables
@@ -296,14 +279,6 @@ with st.sidebar:
             },
         },
     )
-
-# --- Auto-colapsar cuando se selecciona algo del menú ---
-if "_last_menu" not in st.session_state:
-    st.session_state["_last_menu"] = menu
-
-if menu != st.session_state["_last_menu"]:
-    st.session_state["_last_menu"] = menu
-    _collapse_sidebar_once()  # Oculta el menú automáticamente
 
 #Formulario Tarifas
 if menu == "Tarifas":
@@ -1045,6 +1020,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
