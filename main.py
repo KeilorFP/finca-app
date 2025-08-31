@@ -34,7 +34,8 @@ from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
 from database import (
-    create_cierres_tables, get_jornadas_between, get_insumos_between,
+    create_cierres_tables,
+    get_jornadas_between, get_insumos_between,
     crear_cierre_mensual, listar_cierres, leer_cierre_detalle
 )
 
@@ -324,224 +325,116 @@ if menu == "Añadir Empleado":
 
 
 # ============================
-# CIERRE MENSUAL (contabilidad)
+# Cierres Mensuales (UI)
 # ============================
-if menu == "Cierre Mensual":
-    import calendar
+if menu == "Cierres Mensuales":
+    st.subheader("🧾 Cierres Mensuales (contabilidad)")
+    from calendar import monthrange
 
-    st.subheader("📦 Cierre mensual de contabilidad (nómina + insumos)")
-
-    # Selección del mes
+    # 1) Selección de mes
     hoy = datetime.date.today()
-    fecha_mes = st.date_input(
-        "Seleccione cualquier fecha del mes a cerrar",
-        value=hoy.replace(day=1)
-    )
-    y, m = fecha_mes.year, fecha_mes.month
-    mes_ini = datetime.date(y, m, 1)
-    mes_fin = datetime.date(y, m, calendar.monthrange(y, m)[1])
+    col1, col2 = st.columns(2)
+    anio = col1.number_input("Año", min_value=2020, max_value=2100, value=hoy.year, step=1)
+    mes  = col2.selectbox("Mes", list(range(1,13)),
+                          index=hoy.month-1,
+                          format_func=lambda m: datetime.date(1900, m, 1).strftime("%B").capitalize())
 
-    st.info(f"Mes a cerrar: **{mes_ini} → {mes_fin}**")
+    mes_ini = datetime.date(int(anio), int(mes), 1)
+    mes_fin = datetime.date(int(anio), int(mes), monthrange(int(anio), int(mes))[1])
 
-    # Tarifas vigentes
-    pago_dia, pago_hx = get_tarifas()
-    st.caption(f"Tarifas aplicadas en este cierre → Día (6h): ₡{pago_dia:,.0f} | Hora extra: ₡{pago_hx:,.0f}")
+    pago_dia, pago_hex = get_tarifas()
+    st.info(f"Rango: {mes_ini} → {mes_fin} | Tarifas: Día ₡{pago_dia:,.0f} • Hora extra ₡{pago_hex:,.0f}")
 
-    # --- Preview Nómina (del mes seleccionado)
-    jornadas_mes = get_jornadas_between(str(mes_ini), str(mes_fin))
-    df_nom = None
-    total_nomina = 0.0
-    if jornadas_mes:
-        df_j = pd.DataFrame(jornadas_mes, columns=[
-            "ID","Trabajador","Fecha","Lote","Actividad","Días","Horas Normales","Horas Extra"
-        ])
-        df_j["Días"] = pd.to_numeric(df_j["Días"], errors="coerce").fillna(0).astype(int)
-        df_j["Horas Extra"] = pd.to_numeric(df_j["Horas Extra"], errors="coerce").fillna(0.0)
+    # 2) Preview de datos del mes
+    jornadas = get_jornadas_between(mes_ini, mes_fin)
+    insumos  = get_insumos_between(mes_ini, mes_fin)
 
-        df_nom = df_j.groupby("Trabajador", as_index=False).agg({
-            "Días":"sum",
-            "Horas Extra":"sum"
-        }).rename(columns={"Días":"Días trabajados"})
+    with st.expander("👷 Nómina del mes (preview)"):
+        if jornadas:
+            dfj = pd.DataFrame(jornadas, columns=[
+                "ID","Trabajador","Fecha","Lote","Actividad","Días","Horas Normales","Horas Extra"
+            ])
+            dfj["Días"] = pd.to_numeric(dfj["Días"], errors="coerce").fillna(0).astype(int)
+            dfj["Horas Extra"] = pd.to_numeric(dfj["Horas Extra"], errors="coerce").fillna(0.0)
 
-        df_nom["Días a pagar"] = df_nom["Días trabajados"]
-        df_nom["Pago por Días"] = df_nom["Días a pagar"] * pago_dia
-        df_nom["Pago Horas Extra"] = df_nom["Horas Extra"] * pago_hx
-        df_nom["Total"] = df_nom["Pago por Días"] + df_nom["Pago Horas Extra"]
-        total_nomina = float(df_nom["Total"].sum())
+            resumen = dfj.groupby("Trabajador", as_index=False)[["Días","Horas Extra"]].sum()
+            resumen["Pago por Días"]   = resumen["Días"] * pago_dia
+            resumen["Pago Horas Extra"] = resumen["Horas Extra"] * pago_hex
+            resumen["Total"]           = resumen["Pago por Días"] + resumen["Pago Horas Extra"]
 
-        st.markdown("### 👥 Nómina (preview)")
-        st.dataframe(
-            df_nom[["Trabajador","Días trabajados","Días a pagar","Horas Extra","Pago por Días","Pago Horas Extra","Total"]]
-                .style.format({
-                    "Días trabajados":"{:,.0f}",
-                    "Días a pagar":"{:,.0f}",
-                    "Horas Extra":"{:,.1f}",
-                    "Pago por Días":"₡{:,.0f}",
-                    "Pago Horas Extra":"₡{:,.0f}",
-                    "Total":"₡{:,.0f}",
-                }),
-            use_container_width=True
-        )
-    else:
-        st.info("No hay jornadas en el mes seleccionado.")
+            st.dataframe(resumen.style.format({
+                "Días":"{:,.0f}", "Horas Extra":"{:,.1f}",
+                "Pago por Días":"₡{:,.0f}", "Pago Horas Extra":"₡{:,.0f}", "Total":"₡{:,.0f}"
+            }), use_container_width=True)
+        else:
+            st.info("No hay jornadas en ese mes.")
 
-    # --- Preview Insumos (del mes seleccionado)
-    insumos_mes = get_insumos_between(str(mes_ini), str(mes_fin))
-    df_ins = None
-    total_insumos = 0.0
-    if insumos_mes:
-        df_ins = pd.DataFrame(insumos_mes, columns=[
-            "ID","Fecha","Lote","Tipo","Etapa","Producto","Dosis","Cantidad","Precio Unitario","Costo Total"
-        ])
-        # Fechas legibles
-        try:
-            df_ins["Fecha"] = pd.to_datetime(df_ins["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-        except Exception:
-            pass
+    with st.expander("🧪 Insumos del mes (preview)"):
+        if insumos:
+            dfi = pd.DataFrame(insumos, columns=[
+                "ID","Fecha","Lote","Tipo","Etapa","Producto","Dosis","Cantidad","Precio Unitario","Costo Total"
+            ])
+            # Renombrados por tipo (igual que en tu sección de registros)
+            # (puedes copiar tus renombrados aquí si quieres)
+            st.dataframe(dfi.style.format({
+                "Precio Unitario":"₡{:,.0f}", "Costo Total":"₡{:,.0f}"
+            }), use_container_width=True)
+        else:
+            st.info("No hay insumos en ese mes.")
 
-        # Resumen por tipo (contable)
-        total_insumos = float(pd.to_numeric(df_ins["Costo Total"], errors="coerce").fillna(0).sum())
-        resumen_tipo = (
-            df_ins.groupby("Tipo", as_index=False)["Costo Total"]
-                 .sum()
-                 .sort_values("Costo Total", ascending=False)
-        )
-
-        st.markdown("### 🧪 Insumos (resumen por tipo)")
-        st.dataframe(
-            resumen_tipo.style.format({"Costo Total":"₡{:,.0f}"}),
-            use_container_width=True
-        )
-
-        with st.expander("📄 Ver detalle de insumos del mes"):
-            # Renombrados para que se parezcan a los formularios
-            df_show = df_ins.copy()
-            # Mapeos por tipo
-            def rename_for_show(df):
-                df2 = df.copy()
-                if not df2.empty:
-                    if "Tipo" in df2.columns and df2["Tipo"].nunique() == 1:
-                        tipo = df2["Tipo"].iloc[0]
-                        if tipo == "Fumigación":
-                            df2 = df2.rename(columns={
-                                "Etapa":"Plaga / control",
-                                "Cantidad":"Litros",
-                                "Precio Unitario":"Precio por litro (₡)"
-                            })
-                        elif tipo == "Herbicida":
-                            df2 = df2.rename(columns={
-                                "Etapa":"Tipo de herbicida",
-                                "Cantidad":"Litros",
-                                "Precio Unitario":"Precio por litro (₡)"
-                            })
-                        elif tipo == "Cal":
-                            df2 = df2.rename(columns={
-                                "Etapa":"Tipo de cal",
-                                "Producto":"Presentación",
-                                "Cantidad":"Sacos (45 kg)",
-                                "Precio Unitario":"Precio por saco (₡)"
-                            })
-                        elif tipo == "Abono":
-                            df2 = df2.rename(columns={
-                                "Etapa":"Etapa de abonado",
-                                "Dosis":"Dosis (g/planta)",
-                                "Cantidad":"Sacos",
-                                "Precio Unitario":"Precio por saco (₡)"
-                            })
-                return df2
-
-            # mostramos todo junto (formato dinero sin decimales)
-            money_cols = [c for c in ["Precio por litro (₡)", "Precio por saco (₡)", "Precio Unitario", "Costo Total"] if c in df_show.columns]
-            st.dataframe(df_show.style.format({col:"₡{:,.0f}" for col in money_cols}), use_container_width=True)
-
-    else:
-        st.info("No hay insumos en el mes seleccionado.")
-
-    # --- Totales del cierre
-    total_general = total_nomina + total_insumos
-    st.markdown("### 🧮 Totales del mes")
-    col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Total Nómina", f"₡{total_nomina:,.0f}")
-    col_b.metric("Total Insumos", f"₡{total_insumos:,.0f}")
-    col_c.metric("TOTAL", f"₡{total_general:,.0f}")
-
-    st.divider()
-    st.markdown("### 💾 Guardar cierre")
-    overwrite = st.checkbox("Sobrescribir si ya existe un cierre del mismo mes", value=False)
-    if st.button("Guardar cierre mensual"):
+    # 3) Crear el cierre (snapshot)
+    overwrite = st.checkbox("Sobrescribir si ya existe", value=False)
+    if st.button("💾 Crear cierre mensual", type="primary"):
         try:
             pid = crear_cierre_mensual(
-                str(mes_ini), str(mes_fin),
-                creado_por=st.session_state.user,
-                tarifa_dia=float(pago_dia),
-                tarifa_hora_extra=float(pago_hx),
+                mes_ini, mes_fin, st.session_state.user,
+                tarifa_dia=pago_dia, tarifa_hora_extra=pago_hex,
                 overwrite=overwrite
             )
-            st.success(f"✅ Cierre guardado (ID {pid}).")
-        except ValueError as ve:
-            st.error(str(ve))
+            st.success(f"Cierre creado (ID {pid}).")
+            st.rerun()
         except Exception as e:
-            st.error(f"❌ No se pudo guardar el cierre: {e}")
+            st.error(str(e))
 
-    st.divider()
+    # 4) Cierres existentes
     st.markdown("### 📚 Cierres guardados")
     cierres = listar_cierres()
     if cierres:
-        df_c = pd.DataFrame(cierres, columns=[
+        dfc = pd.DataFrame(cierres, columns=[
             "ID","Mes inicio","Mes fin","Creado por","Creado el",
-            "Total Nómina","Total Insumos","Total General"
+            "Total nómina","Total insumos","Total general"
         ])
-        st.dataframe(
-            df_c.style.format({
-                "Total Nómina":"₡{:,.0f}",
-                "Total Insumos":"₡{:,.0f}",
-                "Total General":"₡{:,.0f}",
-            }),
-            use_container_width=True
-        )
+        st.dataframe(dfc.style.format({
+            "Total nómina":"₡{:,.0f}", "Total insumos":"₡{:,.0f}", "Total general":"₡{:,.0f}"
+        }), use_container_width=True)
 
-        # Ver detalle de un cierre
-        ids = [r[0] for r in cierres]
-        sel = st.selectbox("Ver detalle del cierre ID:", ids)
+        sel = st.selectbox("Ver detalle del cierre", [f"{r[0]} — {r[1]} a {r[2]}" for r in cierres])
         if sel:
-            nomina_det, insumos_det = leer_cierre_detalle(sel)
+            pago_id = int(sel.split(" — ",1)[0])
+            nomina, insumos_det = leer_cierre_detalle(pago_id)
 
-            st.markdown("#### 👥 Detalle Nómina (cierre)")
-            if nomina_det:
-                df_nd = pd.DataFrame(nomina_det, columns=[
+            st.markdown("#### 👷 Nómina (detalle)")
+            if nomina:
+                dfn = pd.DataFrame(nomina, columns=[
                     "Trabajador","Días","Horas Extra","Monto días","Monto HEX","Total"
                 ])
-                st.dataframe(
-                    df_nd.style.format({
-                        "Días":"{:,.0f}",
-                        "Horas Extra":"{:,.1f}",
-                        "Monto días":"₡{:,.0f}",
-                        "Monto HEX":"₡{:,.0f}",
-                        "Total":"₡{:,.0f}",
-                    }),
-                    use_container_width=True
-                )
+                st.dataframe(dfn.style.format({
+                    "Días":"{:,.0f}","Horas Extra":"{:,.1f}",
+                    "Monto días":"₡{:,.0f}","Monto HEX":"₡{:,.0f}","Total":"₡{:,.0f}"
+                }), use_container_width=True)
             else:
-                st.info("Sin datos de nómina en ese cierre.")
+                st.info("Sin datos de nómina en este cierre.")
 
-            st.markdown("#### 🧪 Detalle Insumos (cierre)")
+            st.markdown("#### 🧪 Insumos (detalle)")
             if insumos_det:
-                df_id = pd.DataFrame(insumos_det, columns=[
+                dfi2 = pd.DataFrame(insumos_det, columns=[
                     "Fecha","Lote","Tipo","Producto","Etapa","Dosis","Cantidad","Precio Unitario","Costo Total"
                 ])
-                try:
-                    df_id["Fecha"] = pd.to_datetime(df_id["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-                st.dataframe(
-                    df_id.style.format({
-                        "Precio Unitario":"₡{:,.0f}",
-                        "Costo Total":"₡{:,.0f}",
-                    }),
-                    use_container_width=True
-                )
+                st.dataframe(dfi2.style.format({
+                    "Precio Unitario":"₡{:,.0f}","Costo Total":"₡{:,.0f}"
+                }), use_container_width=True)
             else:
-                st.info("Sin datos de insumos en ese cierre.")
+                st.info("Sin insumos en este cierre.")
     else:
         st.info("Aún no hay cierres guardados.")
 
@@ -1254,6 +1147,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
