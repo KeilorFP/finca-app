@@ -1,19 +1,13 @@
-# database.py — Supabase (Postgres) con psycopg2 + bcrypt — multiusuario (owner)
+# database.py — Postgres (psycopg2) multi-usuario por "owner"
 import os
 import time
 import bcrypt
 import psycopg2
-from psycopg2 import OperationalError, IntegrityError
 from psycopg2.extras import execute_values
+from psycopg2 import IntegrityError, OperationalError
 
-# ==========================
-# Conexión
-# ==========================
+# ---------- Conexión ----------
 def connect_db():
-    """
-    Lee DATABASE_URL (env o st.secrets), fuerza sslmode=require si falta,
-    y devuelve una conexión psycopg2.
-    """
     url = os.getenv("DATABASE_URL")
     if not url:
         try:
@@ -21,34 +15,29 @@ def connect_db():
             url = st.secrets["DATABASE_URL"]
         except Exception:
             raise RuntimeError("DATABASE_URL no está configurada en variables de entorno ni en st.secrets.")
-
     url = url.strip()
     if "sslmode=" not in url:
         url = url + ("&sslmode=require" if "?" in url else "?sslmode=require")
-
     try:
         return psycopg2.connect(url)
     except Exception as e:
-        # Sanitiza la URL (oculta la contraseña) para logs
+        # ocultar password en logs
         try:
-            _, after_at = url.split("@", 1)
+            before_at, after_at = url.split("@", 1)
             safe_url = "postgresql://postgres:***@" + after_at
         except Exception:
             safe_url = "postgresql://postgres:***@<host>:<port>/<db>"
         raise RuntimeError(f"No pude conectar a Postgres con DSN={safe_url}. Detalle: {e}")
 
-# ==========================
-# Creación de tablas base (idempotente)
-# ==========================
+# ---------- Tablas base ----------
 def create_users_table():
-    conn = connect_db()
-    cur = conn.cursor()
+    conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                password TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+              username TEXT PRIMARY KEY,
+              password TEXT NOT NULL,
+              created_at TIMESTAMPTZ DEFAULT now()
             );
         """)
         conn.commit()
@@ -60,12 +49,12 @@ def create_trabajadores_table():
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS trabajadores (
-                id SERIAL PRIMARY KEY,
-                nombre TEXT NOT NULL,
-                apellido TEXT NOT NULL,
-                owner TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                UNIQUE (owner, nombre, apellido)
+              id SERIAL PRIMARY KEY,
+              owner TEXT NOT NULL,
+              nombre TEXT NOT NULL,
+              apellido TEXT NOT NULL,
+              created_at TIMESTAMPTZ DEFAULT now(),
+              UNIQUE(owner, nombre, apellido)
             );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_trabajadores_owner ON trabajadores(owner);")
@@ -78,16 +67,15 @@ def create_jornadas_table():
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS jornadas (
-                id SERIAL PRIMARY KEY,
-                trabajador TEXT NOT NULL,
-                fecha DATE NOT NULL,
-                lote TEXT,
-                actividad TEXT,
-                dias INTEGER NOT NULL DEFAULT 0,
-                horas_normales NUMERIC NOT NULL DEFAULT 0,
-                horas_extra NUMERIC NOT NULL DEFAULT 0,
-                owner TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+              id SERIAL PRIMARY KEY,
+              owner TEXT NOT NULL,
+              trabajador TEXT NOT NULL,
+              fecha DATE NOT NULL,
+              lote TEXT,
+              actividad TEXT,
+              dias INTEGER NOT NULL DEFAULT 0,
+              horas_normales NUMERIC NOT NULL DEFAULT 0,
+              horas_extra NUMERIC NOT NULL DEFAULT 0
             );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_jornadas_owner ON jornadas(owner);")
@@ -101,18 +89,17 @@ def create_insumos_table():
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS insumos (
-                id SERIAL PRIMARY KEY,
-                fecha DATE NOT NULL,
-                lote TEXT,
-                tipo TEXT NOT NULL,      -- Abono / Fumigación / Cal / Herbicida
-                etapa TEXT,              -- etapa / plaga / tipo cal / tipo herbicida
-                producto TEXT,
-                dosis TEXT,
-                cantidad NUMERIC,
-                precio_unitario NUMERIC,
-                costo_total NUMERIC,
-                owner TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+              id SERIAL PRIMARY KEY,
+              owner TEXT NOT NULL,
+              fecha DATE,
+              lote TEXT,
+              tipo TEXT,
+              etapa TEXT,       -- se usa como 'plaga/control' o 'tipo de cal/herbicida' o 'etapa de abonado'
+              producto TEXT,
+              dosis TEXT,
+              cantidad NUMERIC,
+              precio_unitario NUMERIC,
+              costo_total NUMERIC
             );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_insumos_owner ON insumos(owner);")
@@ -122,13 +109,174 @@ def create_insumos_table():
     finally:
         conn.close()
 
-# ==========================
-# Usuarios (login con bcrypt)
-# ==========================
+# ---------- Tarifas (por usuario) ----------
+def create_tarifas_table():
+    """
+    Crea la tabla de tarifas por usuario. Mantiene compatibilidad con la antigua 'tarifas' global si existiera.
+    """
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        # tabla nueva por usuario
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tarifas_user (
+              owner TEXT PRIMARY KEY,
+              pago_dia NUMERIC NOT NULL,
+              pago_hora_extra NUMERIC NOT NULL,
+              updated_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        # (opcional) tabla legacy global por si existe (no usada ya)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tarifas (
+              id INTEGER PRIMARY KEY,
+              pago_dia NUMERIC NOT NULL,
+              pago_hora_extra NUMERIC NOT NULL,
+              updated_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        # fila default legacy (no afecta a multi-usuario; se usa sólo como fallback para la primera vez)
+        cur.execute("""
+            INSERT INTO tarifas (id, pago_dia, pago_hora_extra)
+            VALUES (1, 9000, 2000)
+            ON CONFLICT (id) DO NOTHING;
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_tarifas(owner: str):
+    """
+    Devuelve (pago_dia, pago_hora_extra) para 'owner'.
+    Si no existe, copia de 'tarifas' legacy (id=1) o usa defaults 9000/2000 y crea fila del owner.
+    """
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT pago_dia, pago_hora_extra FROM tarifas_user WHERE owner=%s;", (owner,))
+        row = cur.fetchone()
+        if row:
+            return float(row[0]), float(row[1])
+
+        # Fallback 1: copiar legacy
+        cur.execute("SELECT pago_dia, pago_hora_extra FROM tarifas WHERE id=1;")
+        legacy = cur.fetchone()
+        if legacy:
+            cur.execute("""
+                INSERT INTO tarifas_user (owner, pago_dia, pago_hora_extra, updated_at)
+                VALUES (%s,%s,%s, now())
+                ON CONFLICT (owner) DO NOTHING;
+            """, (owner, legacy[0], legacy[1]))
+            conn.commit()
+            return float(legacy[0]), float(legacy[1])
+
+        # Fallback 2: defaults
+        cur.execute("""
+            INSERT INTO tarifas_user (owner, pago_dia, pago_hora_extra) VALUES (%s,%s,%s)
+            ON CONFLICT (owner) DO NOTHING;
+        """, (owner, 9000, 2000))
+        conn.commit()
+        return 9000.0, 2000.0
+    finally:
+        conn.close()
+
+def set_tarifas(owner: str, pago_dia: float, pago_hora_extra: float):
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO tarifas_user (owner, pago_dia, pago_hora_extra, updated_at)
+            VALUES (%s,%s,%s, now())
+            ON CONFLICT (owner) DO UPDATE
+            SET pago_dia=EXCLUDED.pago_dia,
+                pago_hora_extra=EXCLUDED.pago_hora_extra,
+                updated_at=now();
+        """, (owner, pago_dia, pago_hora_extra))
+        conn.commit()
+    finally:
+        conn.close()
+
+# ---------- Cierres mensuales ----------
+def create_cierres_tables():
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pagos_mes (
+              id SERIAL PRIMARY KEY,
+              owner TEXT NOT NULL,
+              mes_ini DATE NOT NULL,
+              mes_fin DATE NOT NULL,
+              creado_por TEXT,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              tarifa_dia NUMERIC NOT NULL,
+              tarifa_hora_extra NUMERIC NOT NULL,
+              total_nomina NUMERIC NOT NULL DEFAULT 0,
+              total_insumos NUMERIC NOT NULL DEFAULT 0,
+              total_general NUMERIC NOT NULL DEFAULT 0,
+              UNIQUE(owner, mes_ini, mes_fin)
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_pagos_mes_owner ON pagos_mes(owner);")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pagos_mes_nomina (
+              id SERIAL PRIMARY KEY,
+              pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
+              trabajador TEXT NOT NULL,
+              dias INTEGER NOT NULL DEFAULT 0,
+              horas_extra NUMERIC NOT NULL DEFAULT 0,
+              monto_dias NUMERIC NOT NULL DEFAULT 0,
+              monto_hex NUMERIC NOT NULL DEFAULT 0,
+              total NUMERIC NOT NULL DEFAULT 0
+            );
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pagos_mes_insumos (
+              id SERIAL PRIMARY KEY,
+              pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
+              fecha DATE,
+              lote TEXT,
+              tipo TEXT,
+              producto TEXT,
+              etapa TEXT,
+              dosis TEXT,
+              cantidad NUMERIC,
+              precio_unitario NUMERIC,
+              costo_total NUMERIC
+            );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+def ensure_cierres_schema():
+    """
+    Migra/asegura columnas por si vienes de una versión antigua sin 'owner' o sin totales.
+    Idempotente.
+    """
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        # owner en tablas antiguas
+        for t in ("trabajadores", "jornadas", "insumos"):
+            cur.execute(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS owner TEXT;")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{t}_owner ON {t}(owner);")
+
+        # columnas en pagos_mes (incluye owner)
+        cur.execute("""
+            ALTER TABLE pagos_mes
+            ADD COLUMN IF NOT EXISTS owner TEXT,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ADD COLUMN IF NOT EXISTS tarifa_dia NUMERIC NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS tarifa_hora_extra NUMERIC NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_nomina NUMERIC NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_insumos NUMERIC NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_general NUMERIC NOT NULL DEFAULT 0;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_pagos_mes_owner ON pagos_mes(owner);")
+        conn.commit()
+    finally:
+        conn.close()
+
+# ---------- Usuarios (bcrypt) ----------
 def add_user(username, raw_password):
-    """
-    Crea usuario con password hasheada (bcrypt).
-    """
     hashed = bcrypt.hashpw(raw_password.encode(), bcrypt.gensalt()).decode()
     conn = connect_db(); cur = conn.cursor()
     try:
@@ -138,34 +286,24 @@ def add_user(username, raw_password):
         conn.close()
 
 def verify_user(username, raw_password):
-    """
-    Verifica usuario y contraseña (bcrypt). Retorna True/False.
-    """
     conn = connect_db(); cur = conn.cursor()
     try:
-        cur.execute("SELECT password FROM users WHERE username = %s;", (username,))
+        cur.execute("SELECT password FROM users WHERE username=%s;", (username,))
         row = cur.fetchone()
         if not row:
             return False
-        hashed = row[0]
-        return bcrypt.checkpw(raw_password.encode(), hashed.encode())
+        return bcrypt.checkpw(raw_password.encode(), row[0].encode())
     finally:
         conn.close()
 
-# ==========================
-# Trabajadores (multiusuario)
-# ==========================
+# ---------- Trabajadores ----------
 def add_trabajador(nombre, apellido, owner):
-    """
-    Inserta trabajador para un owner. UNIQUE(owner, nombre, apellido).
-    """
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO trabajadores (nombre, apellido, owner)
-            VALUES (%s, %s, %s)
+            INSERT INTO trabajadores (owner, nombre, apellido) VALUES (%s,%s,%s)
             ON CONFLICT (owner, nombre, apellido) DO NOTHING;
-        """, (nombre, apellido, owner))
+        """, (owner, nombre, apellido))
         conn.commit()
         return True
     except IntegrityError:
@@ -175,31 +313,21 @@ def add_trabajador(nombre, apellido, owner):
         conn.close()
 
 def get_all_trabajadores(owner):
-    """
-    Retorna lista de 'Nombre Apellido' del owner, ordenada por nombre.
-    """
     conn = connect_db(); cur = conn.cursor()
     try:
-        cur.execute("""
-            SELECT nombre || ' ' || apellido
-            FROM trabajadores
-            WHERE owner=%s
-            ORDER BY nombre;
-        """, (owner,))
-        return [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT nombre || ' ' || apellido FROM trabajadores WHERE owner=%s ORDER BY nombre;", (owner,))
+        return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
-# ==========================
-# Jornadas (multiusuario)
-# ==========================
+# ---------- Jornadas ----------
 def add_jornada(trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, owner):
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO jornadas (trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, owner)
+            INSERT INTO jornadas (owner, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s);
-        """, (trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, owner))
+        """, (owner, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra))
         conn.commit()
     finally:
         conn.close()
@@ -217,76 +345,59 @@ def get_last_jornada_by_date(fecha, owner):
     try:
         cur.execute("""
             SELECT * FROM jornadas
-            WHERE fecha=%s AND owner=%s
-            ORDER BY id DESC
-            LIMIT 1;
-        """, (fecha, owner))
+            WHERE owner=%s AND fecha=%s
+            ORDER BY id DESC LIMIT 1;
+        """, (owner, fecha))
         return cur.fetchone()
     finally:
         conn.close()
 
-def update_jornada(id, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, owner):
+def update_jornada(id_j, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, owner):
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE jornadas
             SET trabajador=%s, fecha=%s, lote=%s, actividad=%s, dias=%s, horas_normales=%s, horas_extra=%s
             WHERE id=%s AND owner=%s;
-        """, (trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, id, owner))
+        """, (trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra, id_j, owner))
         conn.commit()
     finally:
         conn.close()
 
-# ==========================
-# Insumos (multiusuario)
-# ==========================
+# ---------- Insumos (Abono/Fumigación/Cal/Herbicida) ----------
 def add_insumo(fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, owner):
     costo_total = (cantidad or 0) * (precio_unitario or 0)
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO insumos (fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total, owner)
+            INSERT INTO insumos (owner, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
-        """, (fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total, owner))
+        """, (owner, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total))
         conn.commit()
     finally:
         conn.close()
 
-def get_insumos_by_tipo(tipo, owner):
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT id, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total
-            FROM insumos
-            WHERE tipo=%s AND owner=%s
-            ORDER BY fecha DESC, id DESC;
-        """, (tipo, owner))
-        return cur.fetchall()
-    finally:
-        conn.close()
-
-# --- helpers para "último por fecha" (multiusuario) ---
 def get_last_abono_by_date(fecha, owner):
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             SELECT * FROM insumos
-            WHERE tipo='Abono' AND fecha=%s AND owner=%s
+            WHERE owner=%s AND tipo='Abono' AND fecha=%s
             ORDER BY id DESC LIMIT 1;
-        """, (fecha, owner))
+        """, (owner, fecha))
         return cur.fetchone()
     finally:
         conn.close()
 
-def update_abono(id, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
+def update_abono(id_i, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
     costo_total = (cantidad or 0) * (precio_unitario or 0)
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE insumos
             SET fecha=%s, lote=%s, etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
-            WHERE id=%s AND owner=%s;
-        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id, owner))
+            WHERE id=%s AND owner=%s AND tipo='Abono';
+        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id_i, owner))
         conn.commit()
     finally:
         conn.close()
@@ -296,22 +407,22 @@ def get_last_fumigacion_by_date(fecha, owner):
     try:
         cur.execute("""
             SELECT * FROM insumos
-            WHERE tipo='Fumigación' AND fecha=%s AND owner=%s
+            WHERE owner=%s AND tipo='Fumigación' AND fecha=%s
             ORDER BY id DESC LIMIT 1;
-        """, (fecha, owner))
+        """, (owner, fecha))
         return cur.fetchone()
     finally:
         conn.close()
 
-def update_fumigacion(id, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
+def update_fumigacion(id_i, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
     costo_total = (cantidad or 0) * (precio_unitario or 0)
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE insumos
             SET fecha=%s, lote=%s, etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
-            WHERE id=%s AND owner=%s;
-        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id, owner))
+            WHERE id=%s AND owner=%s AND tipo='Fumigación';
+        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id_i, owner))
         conn.commit()
     finally:
         conn.close()
@@ -321,22 +432,22 @@ def get_last_cal_by_date(fecha, owner):
     try:
         cur.execute("""
             SELECT * FROM insumos
-            WHERE tipo='Cal' AND fecha=%s AND owner=%s
+            WHERE owner=%s AND tipo='Cal' AND fecha=%s
             ORDER BY id DESC LIMIT 1;
-        """, (fecha, owner))
+        """, (owner, fecha))
         return cur.fetchone()
     finally:
         conn.close()
 
-def update_cal(id, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
+def update_cal(id_i, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
     costo_total = (cantidad or 0) * (precio_unitario or 0)
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE insumos
-            SET fecha=%s, lote=%s, tipo=%s, etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
-            WHERE id=%s AND owner=%s;
-        """, (fecha, lote, "Cal", etapa, producto, dosis, cantidad, precio_unitario, costo_total, id, owner))
+            SET fecha=%s, lote=%s, tipo='Cal', etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
+            WHERE id=%s AND owner=%s AND tipo='Cal';
+        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id_i, owner))
         conn.commit()
     finally:
         conn.close()
@@ -346,148 +457,29 @@ def get_last_herbicida_by_date(fecha, owner):
     try:
         cur.execute("""
             SELECT * FROM insumos
-            WHERE tipo='Herbicida' AND fecha=%s AND owner=%s
+            WHERE owner=%s AND tipo='Herbicida' AND fecha=%s
             ORDER BY id DESC LIMIT 1;
-        """, (fecha, owner))
+        """, (owner, fecha))
         return cur.fetchone()
     finally:
         conn.close()
 
-def update_herbicida(id, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
+def update_herbicida(id_i, fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, owner):
     costo_total = (cantidad or 0) * (precio_unitario or 0)
     conn = connect_db(); cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE insumos
-            SET fecha=%s, lote=%s, tipo=%s, etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
-            WHERE id=%s AND owner=%s;
-        """, (fecha, lote, "Herbicida", etapa, producto, dosis, cantidad, precio_unitario, costo_total, id, owner))
+            SET fecha=%s, lote=%s, tipo='Herbicida', etapa=%s, producto=%s, dosis=%s, cantidad=%s, precio_unitario=%s, costo_total=%s
+            WHERE id=%s AND owner=%s AND tipo='Herbicida';
+        """, (fecha, lote, etapa, producto, dosis, cantidad, precio_unitario, costo_total, id_i, owner))
         conn.commit()
     finally:
         conn.close()
 
-# ==========================
-# TARIFAS por usuario (persisten en Supabase)
-# ==========================
-def create_tarifas_table():
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS tarifas (
-                owner TEXT PRIMARY KEY,
-                pago_dia NUMERIC NOT NULL DEFAULT 9000,
-                pago_hora_extra NUMERIC NOT NULL DEFAULT 2000,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-        """)
-        conn.commit()
-    finally:
-        conn.close()
-
-def get_tarifas(owner):
-    """
-    Devuelve (pago_dia, pago_hora_extra) como floats para el owner.
-    Si no existe, crea defaults y retorna.
-    """
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("SELECT pago_dia, pago_hora_extra FROM tarifas WHERE owner=%s;", (owner,))
-        row = cur.fetchone()
-        if row:
-            return float(row[0]), float(row[1])
-        # crear con defaults
-        cur.execute("""
-            INSERT INTO tarifas (owner, pago_dia, pago_hora_extra)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (owner) DO NOTHING;
-        """, (owner, 9000, 2000))
-        conn.commit()
-        return 9000.0, 2000.0
-    finally:
-        conn.close()
-
-def set_tarifas(owner, pago_dia, pago_hora_extra):
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("""
-            INSERT INTO tarifas (owner, pago_dia, pago_hora_extra, updated_at)
-            VALUES (%s,%s,%s, now())
-            ON CONFLICT (owner) DO UPDATE
-            SET pago_dia=EXCLUDED.pago_dia,
-                pago_hora_extra=EXCLUDED.pago_hora_extra,
-                updated_at=now();
-        """, (owner, pago_dia, pago_hora_extra))
-        conn.commit()
-    finally:
-        conn.close()
-
-# ==========================
-# CIERRES MENSUALES (multiusuario)
-# ==========================
-def create_cierres_tables():
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pagos_mes (
-                id SERIAL PRIMARY KEY,
-                owner TEXT NOT NULL,
-                mes_ini DATE NOT NULL,
-                mes_fin DATE NOT NULL,
-                creado_por TEXT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                tarifa_dia NUMERIC NOT NULL,
-                tarifa_hora_extra NUMERIC NOT NULL,
-                total_nomina NUMERIC NOT NULL DEFAULT 0,
-                total_insumos NUMERIC NOT NULL DEFAULT 0,
-                total_general NUMERIC NOT NULL DEFAULT 0,
-                UNIQUE (owner, mes_ini, mes_fin)
-            );
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pagos_mes_nomina (
-                id SERIAL PRIMARY KEY,
-                pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
-                trabajador TEXT NOT NULL,
-                dias INTEGER NOT NULL DEFAULT 0,
-                horas_extra NUMERIC NOT NULL DEFAULT 0,
-                monto_dias NUMERIC NOT NULL DEFAULT 0,
-                monto_hex NUMERIC NOT NULL DEFAULT 0,
-                total NUMERIC NOT NULL DEFAULT 0
-            );
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pagos_mes_insumos (
-                id SERIAL PRIMARY KEY,
-                pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
-                fecha DATE,
-                lote TEXT,
-                tipo TEXT,
-                producto TEXT,
-                etapa TEXT,
-                dosis TEXT,
-                cantidad NUMERIC,
-                precio_unitario NUMERIC,
-                costo_total NUMERIC
-            );
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_pagos_mes_owner ON pagos_mes(owner);")
-        conn.commit()
-    finally:
-        conn.close()
-
-# ------- helpers robustos (reintentos) -------
-def _run_with_retry(fn, retries=1, delay=0.8):
-    try:
-        return fn()
-    except OperationalError:
-        if retries <= 0:
-            raise
-        time.sleep(delay)
-        return fn()
-
-# ------- consultas por rango (filtradas por owner) -------
+# ---------- Queries por rango (con retry) ----------
 def get_jornadas_between(fecha_ini, fecha_fin, owner):
-    def _do():
+    def _run():
         conn = connect_db(); cur = conn.cursor()
         try:
             cur.execute("""
@@ -498,15 +490,18 @@ def get_jornadas_between(fecha_ini, fecha_fin, owner):
             return cur.fetchall()
         finally:
             conn.close()
-    return _run_with_retry(_do)
+    try:
+        return _run()
+    except OperationalError:
+        time.sleep(0.8)
+        return _run()
 
 def get_insumos_between(fecha_ini, fecha_fin, owner):
-    def _do():
+    def _run():
         conn = connect_db(); cur = conn.cursor()
         try:
             cur.execute("""
-                SELECT id, fecha, lote, tipo, etapa, producto, dosis,
-                       cantidad, precio_unitario, costo_total
+                SELECT id, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total
                 FROM insumos
                 WHERE owner=%s AND fecha BETWEEN %s AND %s
                 ORDER BY fecha DESC, id DESC;
@@ -514,31 +509,28 @@ def get_insumos_between(fecha_ini, fecha_fin, owner):
             return cur.fetchall()
         finally:
             conn.close()
-    return _run_with_retry(_do)
+    try:
+        return _run()
+    except OperationalError:
+        time.sleep(0.8)
+        return _run()
 
-def crear_cierre_mensual(mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra, owner, overwrite=False):
-    """
-    Crea snapshot mensual (nómina + insumos) para un owner.
-    Retorna pago_id.
-    """
+# ---------- Cierres (crear/listar/leer) ----------
+def crear_cierre_mensual(mes_ini, mes_fin, creado_por, owner, tarifa_dia, tarifa_hora_extra, overwrite=False):
     conn = connect_db(); cur = conn.cursor()
     try:
-        # ¿Existe ya?
-        cur.execute("SELECT id FROM pagos_mes WHERE owner=%s AND mes_ini=%s AND mes_fin=%s;",
-                    (owner, mes_ini, mes_fin))
+        # existe?
+        cur.execute("SELECT id FROM pagos_mes WHERE owner=%s AND mes_ini=%s AND mes_fin=%s;", (owner, mes_ini, mes_fin))
         row = cur.fetchone()
         if row and not overwrite:
-            raise ValueError("Ya existe un cierre para ese mes. Activa 'Sobrescribir' para recrearlo.")
+            raise ValueError("Ya existe un cierre para ese mes. Activa 'Sobrescribir' si quieres recrearlo.")
         if row and overwrite:
-            cur.execute("DELETE FROM pagos_mes WHERE owner=%s AND mes_ini=%s AND mes_fin=%s;",
-                        (owner, mes_ini, mes_fin))
+            cur.execute("DELETE FROM pagos_mes WHERE owner=%s AND mes_ini=%s AND mes_fin=%s;", (owner, mes_ini, mes_fin))
             conn.commit()
 
-        # Nómina agregada por trabajador
+        # nómina por trabajador
         cur.execute("""
-            SELECT trabajador,
-                   COALESCE(SUM(dias),0) AS dias,
-                   COALESCE(SUM(horas_extra),0) AS horas_extra
+            SELECT trabajador, COALESCE(SUM(dias),0) AS dias, COALESCE(SUM(horas_extra),0) AS horas_extra
             FROM jornadas
             WHERE owner=%s AND fecha BETWEEN %s AND %s
             GROUP BY trabajador
@@ -546,17 +538,17 @@ def crear_cierre_mensual(mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_e
         """, (owner, mes_ini, mes_fin))
         nomina_rows = cur.fetchall()
 
-        total_nomina = 0.0
+        total_nomina = 0
         detalle_nomina = []
         for trab, dias, hextra in nomina_rows:
-            monto_dias = (dias or 0) * float(tarifa_dia)
-            monto_hex  = float(hextra or 0) * float(tarifa_hora_extra)
-            total      = float(monto_dias) + float(monto_hex)
+            monto_dias = (dias or 0) * tarifa_dia
+            monto_hex  = (hextra or 0) * tarifa_hora_extra
+            total      = (monto_dias or 0) + (monto_hex or 0)
             total_nomina += total
-            detalle_nomina.append((trab, int(dias or 0), float(hextra or 0),
-                                   float(monto_dias), float(monto_hex), float(total)))
+            detalle_nomina.append((trab, dias or 0, float(hextra or 0),
+                                   float(monto_dias or 0), float(monto_hex or 0), float(total or 0)))
 
-        # Insumos del rango
+        # insumos del rango
         cur.execute("""
             SELECT fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total
             FROM insumos
@@ -568,40 +560,30 @@ def crear_cierre_mensual(mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_e
         total_insumos = sum(float(r[-1] or 0) for r in insumos_rows)
         total_general = float(total_nomina) + float(total_insumos)
 
-        # Cabecera
+        # cabecera
         cur.execute("""
             INSERT INTO pagos_mes
-                (owner, mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra,
-                 total_nomina, total_insumos, total_general)
+                (owner, mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra, total_nomina, total_insumos, total_general)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id;
-        """, (owner, mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra,
-              total_nomina, total_insumos, total_general))
+        """, (owner, mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra, total_nomina, total_insumos, total_general))
         pago_id = cur.fetchone()[0]
 
-        # Detalle nómina
+        # detalle nómina
         if detalle_nomina:
-            execute_values(
-                cur,
-                """
+            execute_values(cur, """
                 INSERT INTO pagos_mes_nomina
-                    (pago_id, trabajador, dias, horas_extra, monto_dias, monto_hex, total)
+                  (pago_id, trabajador, dias, horas_extra, monto_dias, monto_hex, total)
                 VALUES %s;
-                """,
-                [(pago_id, *row) for row in detalle_nomina]
-            )
+            """, [(pago_id, *row) for row in detalle_nomina])
 
-        # Detalle insumos
+        # detalle insumos
         if insumos_rows:
-            execute_values(
-                cur,
-                """
+            execute_values(cur, """
                 INSERT INTO pagos_mes_insumos
-                    (pago_id, fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total)
+                  (pago_id, fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total)
                 VALUES %s;
-                """,
-                [(pago_id, *r) for r in insumos_rows]
-            )
+            """, [(pago_id, *r) for r in insumos_rows])
 
         conn.commit()
         return pago_id
@@ -622,16 +604,12 @@ def listar_cierres(owner):
         conn.close()
 
 def leer_cierre_detalle(pago_id, owner):
-    """
-    Devuelve (nomina_rows, insumo_rows) del pago_id si pertenece al owner.
-    """
     conn = connect_db(); cur = conn.cursor()
     try:
-        # Verifica pertenencia
+        # validar pertenencia
         cur.execute("SELECT 1 FROM pagos_mes WHERE id=%s AND owner=%s;", (pago_id, owner))
         if not cur.fetchone():
             return [], []
-
         cur.execute("""
             SELECT trabajador, dias, horas_extra, monto_dias, monto_hex, total
             FROM pagos_mes_nomina
@@ -647,35 +625,11 @@ def leer_cierre_detalle(pago_id, owner):
             ORDER BY fecha, id;
         """, (pago_id,))
         insumos = cur.fetchall()
-
         return nomina, insumos
     finally:
         conn.close()
 
-# ==========================
-# (Opcional) Ajuste de esquema en caliente para columnas nuevas
-# ==========================
-def ensure_cierres_schema():
-    """
-    Asegura que pagos_mes tenga columnas clave si migras desde una versión anterior.
-    Es idempotente.
-    """
-    conn = connect_db(); cur = conn.cursor()
-    try:
-        cur.execute("""
-            ALTER TABLE pagos_mes
-            ADD COLUMN IF NOT EXISTS owner TEXT,
-            ADD COLUMN IF NOT EXISTS created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-            ADD COLUMN IF NOT EXISTS tarifa_dia        NUMERIC     NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS tarifa_hora_extra NUMERIC     NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS total_nomina      NUMERIC     NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS total_insumos     NUMERIC     NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS total_general     NUMERIC     NOT NULL DEFAULT 0;
-        """)
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_pagos_mes_owner ON pagos_mes(owner);")
-        conn.commit()
-    finally:
-        conn.close()
+
 
 
 
