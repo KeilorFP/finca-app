@@ -79,6 +79,53 @@ def create_trabajadores_table():
     finally:
         conn.close()
 
+def create_fincas_table():
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fincas (
+              id SERIAL PRIMARY KEY,
+              owner TEXT NOT NULL,
+              nombre TEXT NOT NULL,
+              created_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_fincas_owner ON fincas(owner);")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_fincas_owner_nombre
+            ON fincas(owner, nombre);
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+def add_finca(nombre: str, owner: str) -> bool:
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO fincas (owner, nombre)
+            VALUES (%s, %s)
+            ON CONFLICT (owner, nombre) DO NOTHING;
+        """, (owner, nombre))
+        conn.commit()
+        return cur.rowcount > 0  # True si insertó, False si ya existía
+    finally:
+        conn.close()
+
+def get_all_fincas(owner: str):
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT nombre
+            FROM fincas
+            WHERE owner=%s
+            ORDER BY nombre;
+        """, (owner,))
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 
 def create_jornadas_table():
     conn = connect_db(); cur = conn.cursor()
@@ -821,6 +868,7 @@ def leer_cierre_detalle(pago_id, owner):
         return nomina, insumos
     finally:
         conn.close()
+
 
 
 
