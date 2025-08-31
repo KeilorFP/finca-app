@@ -268,70 +268,70 @@ if menu == "Registrar Jornada":
                 st.success("✅ Jornada registrada")
 
         with st.expander("✏️ Editar último registro de jornada"):
-        ultima_jornada = get_last_jornada_by_date(str(fecha))
-        if ultima_jornada:
-            # Soporta tuplas de 8 (sin owner) o 9 columnas (con owner)
-            if len(ultima_jornada) == 9:
-                (jornada_id, _owner, trabajador_actual, fecha_actual,
-                 lote, actividad, dias, horas_normales, horas_extra) = ultima_jornada
-            elif len(ultima_jornada) == 8:
-                (jornada_id, trabajador_actual, fecha_actual,
-                 lote, actividad, dias, horas_normales, horas_extra) = ultima_jornada
+            ultima_jornada = get_last_jornada_by_date(str(fecha))
+            if ultima_jornada:
+                # Soporta tuplas de 8 (sin owner) o 9 columnas (con owner)
+                if len(ultima_jornada) == 9:
+                    (jornada_id, _owner, trabajador_actual, fecha_actual,
+                     lote, actividad, dias, horas_normales, horas_extra) = ultima_jornada
+                elif len(ultima_jornada) == 8:
+                    (jornada_id, trabajador_actual, fecha_actual,
+                     lote, actividad, dias, horas_normales, horas_extra) = ultima_jornada
+                else:
+                    st.error(f"Formato inesperado de jornada (campos={len(ultima_jornada)}).")
+                    st.stop()
+        
+                # Trabajador
+                try:
+                    idx_trab = trabajadores_disponibles.index(trabajador_actual)
+                except ValueError:
+                    idx_trab = 0
+                nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
+        
+                # Fecha (normalizamos a date)
+                try:
+                    f_str = str(fecha_actual)[:10]
+                    default_date = datetime.datetime.strptime(f_str, "%Y-%m-%d").date()
+                except Exception:
+                    default_date = datetime.date.today()
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", default_date, format="YYYY-MM-DD")
+        
+                # Lote
+                try:
+                    idx_lote = LOTE_LISTA.index(lote)
+                except ValueError:
+                    idx_lote = 0
+                nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+        
+                # Actividad
+                try:
+                    idx_act = ACTIVIDADES.index(actividad)
+                except ValueError:
+                    idx_act = 0
+                nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
+        
+                # Números
+                nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias), min_value=0, max_value=31, step=1)
+                nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(horas_extra), min_value=0.0, step=0.5)
+                nuevas_horas_normales = nuevos_dias * 6
+                st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
+        
+                if st.button("Actualizar jornada"):
+                    update_jornada(
+                        jornada_id,
+                        nuevo_trabajador,
+                        nueva_fecha.strftime("%Y-%m-%d"),
+                        nuevo_lote,
+                        nueva_actividad,
+                        nuevos_dias,
+                        nuevas_horas_normales,
+                        nuevas_horas_extra
+                    )
+                    st.success("✅ Jornada actualizada correctamente.")
+                    st.rerun()
             else:
-                st.error(f"Formato inesperado de jornada (campos={len(ultima_jornada)}).")
-                st.stop()
+                st.info("No hay registros de jornada para editar.")
     
-            # Trabajador
-            try:
-                idx_trab = trabajadores_disponibles.index(trabajador_actual)
-            except ValueError:
-                idx_trab = 0
-            nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
-    
-            # Fecha (normalizamos a date)
-            try:
-                f_str = str(fecha_actual)[:10]
-                default_date = datetime.datetime.strptime(f_str, "%Y-%m-%d").date()
-            except Exception:
-                default_date = datetime.date.today()
-            nueva_fecha = st.date_input("Nueva fecha de trabajo", default_date, format="YYYY-MM-DD")
-    
-            # Lote
-            try:
-                idx_lote = LOTE_LISTA.index(lote)
-            except ValueError:
-                idx_lote = 0
-            nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
-    
-            # Actividad
-            try:
-                idx_act = ACTIVIDADES.index(actividad)
-            except ValueError:
-                idx_act = 0
-            nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
-    
-            # Números
-            nuevos_dias = st.number_input("Nuevos días trabajados", value=int(dias), min_value=0, max_value=31, step=1)
-            nuevas_horas_extra = st.number_input("Nuevas horas extra", value=float(horas_extra), min_value=0.0, step=0.5)
-            nuevas_horas_normales = nuevos_dias * 6
-            st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
-    
-            if st.button("Actualizar jornada"):
-                update_jornada(
-                    jornada_id,
-                    nuevo_trabajador,
-                    nueva_fecha.strftime("%Y-%m-%d"),
-                    nuevo_lote,
-                    nueva_actividad,
-                    nuevos_dias,
-                    nuevas_horas_normales,
-                    nuevas_horas_extra
-                )
-                st.success("✅ Jornada actualizada correctamente.")
-                st.rerun()
-        else:
-            st.info("No hay registros de jornada para editar.")
-
 
 # ===== Registrar Abono =====
 if menu == "Registrar Abono":
@@ -656,6 +656,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
