@@ -6,7 +6,6 @@ from streamlit_option_menu import option_menu
 import datetime
 import datetime as dt
 
-
 # IMPORTS PARA PDF
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -38,6 +37,7 @@ from database import (
     get_jornadas_between, get_insumos_between,
     crear_cierre_mensual, listar_cierres, leer_cierre_detalle
 )
+from database import create_cierres_tables, ensure_cierres_schema
 
 
 
@@ -147,6 +147,7 @@ create_insumos_table()
 create_trabajadores_table()
 create_tarifas_table()
 create_cierres_tables()
+ensure_cierres_schema()
 
 
 
@@ -1147,6 +1148,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
