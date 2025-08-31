@@ -356,12 +356,14 @@ if menu == "Registrar Jornada":
                         nueva_fecha.strftime("%Y-%m-%d"),         # fecha
                         nuevo_lote,                               # lote
                         nueva_actividad,                          # actividad
-                        int(nuevos_dias),                         # dias
+                        int(nuevos_dias),                         # días
                         int(nuevos_dias) * 6,                     # horas_normales
                         float(nuevas_horas_extra),                # horas_extra
+                        OWNER,                                    # <<< owner para multi-tenant
                     )
                     st.success("✅ Jornada actualizada correctamente.")
                     st.rerun()
+
 
             else:
                 st.info("No hay registros de jornada para editar.")
@@ -691,6 +693,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
