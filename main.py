@@ -31,15 +31,27 @@ from database import (
     crear_cierre_mensual, listar_cierres, leer_cierre_detalle,
 )
 
-# Env var fallback
-if not os.getenv("DATABASE_URL"):
-    try:
-        os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
-    except Exception:
-        pass
+# =============================
+# 🧩 Config DB (Supabase/Postgres)
+# =============================
+# Fallback: primero env, luego secrets. Requiere sslmode=require para Supabase.
+DB_URL = (
+    os.getenv("DATABASE_URL")
+    or st.secrets.get("DATABASE_URL")
+    or st.secrets.get("SUPABASE_DB_URL")
+)
+if not DB_URL:
+    st.error(
+        "No encuentro la cadena de conexión. Configura **DATABASE_URL** en *st.secrets* o variable de entorno.\n"
+        "Formato típico Supabase: `postgresql://usuario:password@HOST:5432/postgres?sslmode=require`"
+    )
+    st.stop()
+# Normalizamos a env para que connect_db() la use.
+os.environ["DATABASE_URL"] = DB_URL
 
 # ===== Estilos =====
-st.markdown("""
+st.markdown(
+    """
 <style>
 @media (max-width: 640px) {
   .block-container { padding: 0.6rem !important; }
@@ -67,7 +79,9 @@ input{ border-radius:10px !important; border:1px solid #374151 !important; backg
 div.stButton>button{ background:linear-gradient(90deg,#10b981,#059669)!important;color:#fff!important;border:none;border-radius:10px;font-weight:600;padding:.6rem 1rem; }
 div.stButton>button:hover{ background:linear-gradient(90deg,#059669,#10b981)!important; box-shadow:0 4px 12px rgba(16,185,129,.3); transform:translateY(-1px);}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ===== Catálogos =====
 LOTE_LISTA = ["Bijagual Fernando", "Bijagual Brothers", "El Alto", "Quebradaonda", "San Bernardo"]
@@ -76,14 +90,25 @@ ETAPAS_ABONO = ["1ra Abonada","2da Abonada","3ra Abonada","4ta Abonada"]
 TIPOS_HERBICIDA = ["Selectivo","No selectivo","Sistemico","De contacto","Otro"]
 TIPOS_CAL = ["Cal agrícola (CaCO₃)","Cal dolomita (CaCO₃·MgCO₃)","Mezcla con yeso agrícola (CaSO₄)","Cal viva (CaO)","Cal apagada (Ca(OH)₂)"]
 
-# ===== Init DB/Migraciones =====
-create_users_table()
-create_trabajadores_table()
-create_jornadas_table()
-create_insumos_table()
-create_tarifas_table()
-create_cierres_tables()
-ensure_cierres_schema()
+# ===== Init DB/Migraciones (con manejo de errores) =====
+try:
+    # "Warm-up" rápido para detectar problemas de conexión temprano
+    _conn = connect_db(); _conn.close()
+except Exception as e:
+    st.error(f"No se pudo conectar a la base de datos: {e}")
+    st.stop()
+
+try:
+    create_users_table()
+    create_trabajadores_table()
+    create_jornadas_table()
+    create_insumos_table()
+    create_tarifas_table()
+    create_cierres_tables()
+    ensure_cierres_schema()
+except Exception as e:
+    st.error(f"Error creando/migrando tablas: {e}")
+    st.stop()
 
 # ===== Login =====
 def login():
@@ -94,12 +119,15 @@ def login():
         username = st.text_input("👤 Usuario")
         password = st.text_input("🔑 Contraseña", type="password")
         if st.button("Entrar"):
-            if verify_user(username, password):
-                st.session_state.logged_in = True
-                st.session_state.user = username
-                st.rerun()
-            else:
-                st.error("❌ Usuario o contraseña incorrectos")
+            try:
+                if verify_user(username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.user = username
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")
+            except Exception as e:
+                st.error(f"Error al verificar usuario: {e}")
     else:
         st.subheader("Crear nuevo usuario")
         new_user = st.text_input("👤 Nuevo usuario")
@@ -108,8 +136,8 @@ def login():
             try:
                 add_user(new_user, new_pass)
                 st.success("✅ Usuario creado. Ya puedes iniciar sesión.")
-            except Exception:
-                st.error("⚠️ Ese usuario ya existe")
+            except Exception as e:
+                st.error(f"⚠️ No se pudo crear: {e}")
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "user" not in st.session_state: st.session_state.user = ""
@@ -280,12 +308,12 @@ if menu == "Registrar Jornada":
                     horas_extra=float(horas_extra),
                     owner=OWNER,  # ← muy importante para la separación por usuario
                 )
-                st.success("✅ Jornada registrada")
+                st.success("✅ Jornada registrada"); st.rerun()
 
        # ---- Edición del último registro del mismo día para este usuario ----
         with st.expander("✏️ Editar último registro de jornada"):
             ultima_jornada = get_last_jornada_by_date(fecha=str(fecha), owner=OWNER)
-        
+
             if ultima_jornada:
                 # Soporta 8 u 9 columnas (según si tu tabla ya tiene 'owner')
                 if len(ultima_jornada) == 9:
@@ -303,49 +331,49 @@ if menu == "Registrar Jornada":
                 else:
                     st.error(f"Formato inesperado de jornada (campos={len(ultima_jornada)}).")
                     st.stop()
-        
+
                 # Trabajador
                 try:
                     idx_trab = trabajadores_disponibles.index(trabajador_actual)
                 except ValueError:
                     idx_trab = 0
                 nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
-        
-                # Fecha segura
+
+                # Fecha segura (sin 'format' para compatibilidad)
                 try:
                     f_str = str(fecha_actual)[:10]
                     default_date = datetime.datetime.strptime(f_str, "%Y-%m-%d").date()
                 except Exception:
                     default_date = datetime.date.today()
-                nueva_fecha = st.date_input("Nueva fecha de trabajo", default_date, format="YYYY-MM-DD")
-        
+                nueva_fecha = st.date_input("Nueva fecha de trabajo", default_date)
+
                 # Lote
                 try:
                     idx_lote = LOTE_LISTA.index(lote_actual)
                 except ValueError:
                     idx_lote = 0
                 nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
-        
+
                 # Actividad
                 try:
                     idx_act = ACTIVIDADES.index(actividad_actual)
                 except ValueError:
                     idx_act = 0
                 nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
-        
+
                 # Conversión segura de numéricos + límites
                 try:
                     val_dias = int(float(dias_actual))
                 except (TypeError, ValueError):
                     val_dias = 0
                 val_dias = max(0, min(val_dias, 31))  # clamp a 0..31
-        
+
                 try:
                     val_hex = float(horas_extra_actual)
                 except (TypeError, ValueError):
                     val_hex = 0.0
                 val_hex = max(0.0, val_hex)  # no negativas
-        
+
                 nuevos_dias = st.number_input(
                     "Nuevos días trabajados",
                     value=val_dias,
@@ -359,10 +387,10 @@ if menu == "Registrar Jornada":
                     min_value=0.0,
                     step=0.5,
                 )
-        
+
                 nuevas_horas_normales = int(nuevos_dias) * 6
                 st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
-        
+
                 if st.button("Actualizar jornada"):
                     update_jornada(
                         jornada_id,                               # id (posicional)
@@ -380,7 +408,6 @@ if menu == "Registrar Jornada":
             else:
                 st.info("No hay registros de jornada para editar.")
 
-    
 
 # ===== Registrar Abono =====
 if menu == "Registrar Abono":
@@ -459,12 +486,15 @@ if menu == "Ver Registros":
     for tipo, titulo in tipos.items():
         with st.expander(titulo):
             conn = connect_db(); cur = conn.cursor()
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT id, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total
                 FROM insumos
                 WHERE owner=%s AND tipo=%s
                 ORDER BY fecha DESC, id DESC;
-            """, (OWNER, tipo))
+                """,
+                (OWNER, tipo),
+            )
             regs = cur.fetchall(); conn.close()
             if regs:
                 df_i = pd.DataFrame(regs, columns=["ID","Fecha","Lote","Tipo","Etapa","Producto","Dosis","Cantidad","Precio Unitario","Costo Total"])
@@ -503,7 +533,7 @@ if menu == "Registrar Fumigación":
             st.info(f"💰 Costo total estimado: ₡{(litros*precio_litro):,.2f}")
         if st.form_submit_button("Guardar fumigación"):
             add_insumo(str(fecha_fum), lote_fum, "Fumigación", plaga, producto, dosis, litros, precio_litro, OWNER)
-            st.success("✅ Fumigación registrada")
+            st.success("✅ Fumigación registrada"); st.rerun()
 
     with st.expander("✏️ Editar último registro de fumigación"):
         ult = get_last_fumigacion_by_date(str(fecha_fum), OWNER)
@@ -517,8 +547,13 @@ if menu == "Registrar Fumigación":
             nueva_dosis = st.text_input("Nueva dosis", value=dosis_act)
             nuevos_litros = st.number_input("Nuevos litros", value=float(litros_act or 0), min_value=0.0, step=0.5)
             nuevo_precio = st.number_input("Nuevo precio por litro", value=float(precio_u or 0), min_value=0.0, step=100.0)
+            # Normalizar fecha a string segura
+            try:
+                fec_str = datetime.datetime.strptime(str(fec)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+            except Exception:
+                fec_str = str(datetime.date.today())
             if st.button("Actualizar fumigación"):
-                update_fumigacion(iid, fec, nuevo_lote, nueva_plaga, nuevo_prod, nueva_dosis, nuevos_litros, nuevo_precio, OWNER)
+                update_fumigacion(iid, fec_str, nuevo_lote, nueva_plaga, nuevo_prod, nueva_dosis, nuevos_litros, nuevo_precio, OWNER)
                 st.success("✅ Fumigación actualizada"); st.rerun()
         else:
             st.info("No hay registros de fumigación para editar.")
@@ -536,7 +571,7 @@ if menu == "Registrar Cal":
             st.info(f"💰 Costo total estimado: ₡{(cantidad*precio_saco):,.2f}")
         if st.form_submit_button("Guardar aplicación de cal"):
             add_insumo(str(fecha_cal), lote_cal, "Cal", tipo_cal, "Saco 45 kg", "", cantidad, precio_saco, OWNER)
-            st.success("✅ Cal registrada")
+            st.success("✅ Cal registrada"); st.rerun()
 
     with st.expander("✏️ Editar último registro de cal"):
         ult = get_last_cal_by_date(str(fecha_cal), OWNER)
@@ -550,8 +585,12 @@ if menu == "Registrar Cal":
             nuevo_tipo = st.selectbox("Nuevo tipo de cal", TIPOS_CAL, index=idx_tipo)
             nueva_cant = st.number_input("Nueva cantidad (sacos)", value=float(cant or 0), min_value=0.0, step=0.5)
             nuevo_precio = st.number_input("Nuevo precio por saco (₡)", value=float(precio_u or 0), min_value=0.0, step=100.0)
+            try:
+                fec_str = datetime.datetime.strptime(str(fec)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+            except Exception:
+                fec_str = str(datetime.date.today())
             if st.button("Actualizar cal"):
-                update_cal(iid, fec, nuevo_lote, nuevo_tipo, "Saco 45 kg", "", nueva_cant, nuevo_precio, OWNER)
+                update_cal(iid, fec_str, nuevo_lote, nuevo_tipo, "Saco 45 kg", "", nueva_cant, nuevo_precio, OWNER)
                 st.success("✅ Cal actualizada"); st.rerun()
         else:
             st.info("No hay registros de cal para editar.")
@@ -571,7 +610,7 @@ if menu == "Registrar Herbicida":
             st.info(f"💰 Costo total estimado: ₡{(litros*precio_l):,.2f}")
         if st.form_submit_button("Guardar aplicación de herbicida"):
             add_insumo(str(fecha_herb), lote_herb, "Herbicida", tipo_herb, producto, dosis, litros, precio_l, OWNER)
-            st.success("✅ Herbicida registrado")
+            st.success("✅ Herbicida registrado"); st.rerun()
 
     with st.expander("✏️ Editar último registro de herbicida"):
         ult = get_last_herbicida_by_date(str(fecha_herb), OWNER)
@@ -587,8 +626,12 @@ if menu == "Registrar Herbicida":
             nueva_dos  = st.text_input("Nueva dosis", value=dosis_act)
             nueva_cant = st.number_input("Nueva cantidad (litros)", value=float(cant or 0), min_value=0.0, step=0.5)
             nuevo_pre  = st.number_input("Nuevo precio por litro (₡)", value=float(precio_u or 0), min_value=0.0, step=100.0)
+            try:
+                fec_str = datetime.datetime.strptime(str(fec)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+            except Exception:
+                fec_str = str(datetime.date.today())
             if st.button("Actualizar herbicida"):
-                update_herbicida(iid, fec, nuevo_lote, nuevo_tipo, nuevo_prod, nueva_dos, nueva_cant, nuevo_pre, OWNER)
+                update_herbicida(iid, fec_str, nuevo_lote, nuevo_tipo, nuevo_prod, nueva_dos, nueva_cant, nuevo_pre, OWNER)
                 st.success("✅ Herbicida actualizado"); st.rerun()
         else:
             st.info("No hay registros de herbicida para editar.")
@@ -692,38 +735,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             pdf_bytes = pdf_resumen(resumen_min, inicio_sem, fin_sem)
             st.download_button("⬇️ Descargar resumen por trabajador (PDF)", data=pdf_bytes,
                                file_name=f"resumen_trabajador_{inicio_sem}_a_{fin_sem}.pdf", mime="application/pdf")
-
-
-
-            
-    
-
-
-
-                 
-        
-    
-        
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
