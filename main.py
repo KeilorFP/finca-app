@@ -33,6 +33,11 @@ from database import get_last_abono_by_date, update_abono
 from database import get_last_fumigacion_by_date, update_fumigacion
 from database import get_last_cal_by_date, update_cal
 from database import get_last_herbicida_by_date, update_herbicida
+from database import (
+    create_cierres_tables, get_jornadas_between, get_insumos_between,
+    crear_cierre_mensual, listar_cierres, leer_cierre_detalle
+)
+
 
 
 
@@ -140,6 +145,7 @@ create_jornadas_table()
 create_insumos_table()
 create_trabajadores_table()
 create_tarifas_table()
+create_cierres_tables()
 
 
 
@@ -1248,6 +1254,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
