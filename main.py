@@ -253,7 +253,7 @@ with st.sidebar:
             "Añadir Empleado",
             "Reporte Semanal (Dom–Sáb)",
             "Tarifas",
-            "Cierres Mensuales"
+            "Cierre Mensual"
         ],
         icons=[
             "calendar-check",  # Jornada
@@ -1254,6 +1254,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
