@@ -4,6 +4,9 @@ import bcrypt
 import os
 import psycopg2
 from psycopg2.extras import execute_values
+import time
+from psycopg2 import OperationalError
+
 
 def connect_db():
     
@@ -494,31 +497,50 @@ def create_cierres_tables():
 
 # ========== QUERIES POR RANGO (para previews) ==========
 def get_jornadas_between(fecha_ini, fecha_fin):
-    conn = connect_db()
-    cur = conn.cursor()
+    """Devuelve jornadas en el rango. Reintenta una vez si la conexión se corta."""
+    def _run():
+        conn = connect_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT * FROM jornadas
+                WHERE fecha BETWEEN %s AND %s
+                ORDER BY fecha DESC, id DESC;
+            """, (fecha_ini, fecha_fin))
+            return cur.fetchall()
+        finally:
+            conn.close()
+
     try:
-        cur.execute("""
-            SELECT * FROM jornadas
-            WHERE fecha BETWEEN %s AND %s
-            ORDER BY fecha DESC, id DESC;
-        """, (fecha_ini, fecha_fin))
-        return cur.fetchall()
-    finally:
-        conn.close()
+        return _run()
+    except OperationalError:
+        time.sleep(0.8)
+        return _run()
+
 
 def get_insumos_between(fecha_ini, fecha_fin):
-    conn = connect_db()
-    cur = conn.cursor()
+    """Devuelve insumos en el rango. Reintenta una vez si la conexión se corta."""
+    def _run():
+        conn = connect_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, fecha, lote, tipo, etapa, producto, dosis,
+                       cantidad, precio_unitario, costo_total
+                FROM insumos
+                WHERE fecha BETWEEN %s AND %s
+                ORDER BY fecha DESC, id DESC;
+            """, (fecha_ini, fecha_fin))
+            return cur.fetchall()
+        finally:
+            conn.close()
+
     try:
-        cur.execute("""
-            SELECT id, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total
-            FROM insumos
-            WHERE fecha BETWEEN %s AND %s
-            ORDER BY fecha DESC, id DESC;
-        """, (fecha_ini, fecha_fin))
-        return cur.fetchall()
-    finally:
-        conn.close()
+        return _run()
+    except OperationalError:
+        time.sleep(0.8)
+        return _run()
+
 
 # ========== CREAR / GUARDAR CIERRE MENSUAL ==========
 def crear_cierre_mensual(mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra, overwrite=False):
@@ -651,6 +673,7 @@ def leer_cierre_detalle(pago_id):
         return nomina, insumos
     finally:
         conn.close()
+
 
 
 
