@@ -282,10 +282,10 @@ if menu == "Registrar Jornada":
                 )
                 st.success("✅ Jornada registrada")
 
-        # ---- Edición del último registro del mismo día para este usuario ----
+       # ---- Edición del último registro del mismo día para este usuario ----
         with st.expander("✏️ Editar último registro de jornada"):
             ultima_jornada = get_last_jornada_by_date(fecha=str(fecha), owner=OWNER)
-
+        
             if ultima_jornada:
                 # Soporta 8 u 9 columnas (según si tu tabla ya tiene 'owner')
                 if len(ultima_jornada) == 9:
@@ -303,14 +303,14 @@ if menu == "Registrar Jornada":
                 else:
                     st.error(f"Formato inesperado de jornada (campos={len(ultima_jornada)}).")
                     st.stop()
-
+        
                 # Trabajador
                 try:
                     idx_trab = trabajadores_disponibles.index(trabajador_actual)
                 except ValueError:
                     idx_trab = 0
                 nuevo_trabajador = st.selectbox("Nuevo trabajador", trabajadores_disponibles, index=idx_trab)
-
+        
                 # Fecha segura
                 try:
                     f_str = str(fecha_actual)[:10]
@@ -318,37 +318,51 @@ if menu == "Registrar Jornada":
                 except Exception:
                     default_date = datetime.date.today()
                 nueva_fecha = st.date_input("Nueva fecha de trabajo", default_date, format="YYYY-MM-DD")
-
+        
                 # Lote
                 try:
                     idx_lote = LOTE_LISTA.index(lote_actual)
                 except ValueError:
                     idx_lote = 0
                 nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
-
+        
                 # Actividad
                 try:
                     idx_act = ACTIVIDADES.index(actividad_actual)
                 except ValueError:
                     idx_act = 0
                 nueva_actividad = st.selectbox("Nueva actividad", ACTIVIDADES, index=idx_act)
-
-                # Conversión segura de numéricos
+        
+                # Conversión segura de numéricos + límites
                 try:
-                    val_dias = int(dias_actual)
+                    val_dias = int(float(dias_actual))
                 except (TypeError, ValueError):
                     val_dias = 0
+                val_dias = max(0, min(val_dias, 31))  # clamp a 0..31
+        
                 try:
                     val_hex = float(horas_extra_actual)
                 except (TypeError, ValueError):
                     val_hex = 0.0
-
-                nuevos_dias = st.number_input("Nuevos días trabajados", value=val_dias, min_value=0, max_value=31, step=1)
-                nuevas_horas_extra = st.number_input("Nuevas horas extra", value=val_hex, min_value=0.0, step=0.5)
-
+                val_hex = max(0.0, val_hex)  # no negativas
+        
+                nuevos_dias = st.number_input(
+                    "Nuevos días trabajados",
+                    value=val_dias,
+                    min_value=0,
+                    max_value=31,
+                    step=1,
+                )
+                nuevas_horas_extra = st.number_input(
+                    "Nuevas horas extra",
+                    value=val_hex,
+                    min_value=0.0,
+                    step=0.5,
+                )
+        
                 nuevas_horas_normales = int(nuevos_dias) * 6
                 st.info(f"🕒 Nuevas horas normales: {nuevas_horas_normales} horas")
-
+        
                 if st.button("Actualizar jornada"):
                     update_jornada(
                         jornada_id,                               # id (posicional)
@@ -359,12 +373,10 @@ if menu == "Registrar Jornada":
                         int(nuevos_dias),                         # días
                         int(nuevos_dias) * 6,                     # horas_normales
                         float(nuevas_horas_extra),                # horas_extra
-                        OWNER,                                    # <<< owner para multi-tenant
+                        OWNER,                                    # owner (multi-tenant)
                     )
                     st.success("✅ Jornada actualizada correctamente.")
                     st.rerun()
-
-
             else:
                 st.info("No hay registros de jornada para editar.")
 
@@ -693,6 +705,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
