@@ -45,22 +45,47 @@ def create_users_table():
         conn.close()
 
 def create_trabajadores_table():
-    conn = connect_db(); cur = conn.cursor()
+    conn = connect_db()
+    cur = conn.cursor()
     try:
+        # Crea la tabla si no existe
         cur.execute("""
             CREATE TABLE IF NOT EXISTS trabajadores (
               id SERIAL PRIMARY KEY,
               owner TEXT NOT NULL,
               nombre TEXT NOT NULL,
               apellido TEXT NOT NULL,
-              created_at TIMESTAMPTZ DEFAULT now(),
-              UNIQUE(owner, nombre, apellido)
+              created_at TIMESTAMPTZ DEFAULT now()
             );
         """)
+        # Índices para performance
         cur.execute("CREATE INDEX IF NOT EXISTS idx_trabajadores_owner ON trabajadores(owner);")
+        # *** Clave única necesaria para que ON CONFLICT funcione ***
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_trabajadores_owner_nombre_apellido
+            ON trabajadores(owner, nombre, apellido);
+        """)
         conn.commit()
     finally:
         conn.close()
+
+
+def ensure_cierres_schema():
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        # ... lo que ya tienes ...
+
+        # Garantiza el índice único para trabajadores (por si la tabla existía sin UNIQUE)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_trabajadores_owner_nombre_apellido
+            ON trabajadores(owner, nombre, apellido);
+        """)
+
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def create_jornadas_table():
     conn = connect_db(); cur = conn.cursor()
@@ -628,6 +653,7 @@ def leer_cierre_detalle(pago_id, owner):
         return nomina, insumos
     finally:
         conn.close()
+
 
 
 
