@@ -3,6 +3,7 @@ from psycopg2 import IntegrityError
 import bcrypt
 import os
 import psycopg2
+from psycopg2.extras import execute_values
 
 def connect_db():
     
@@ -440,120 +441,217 @@ def set_tarifas(pago_dia, pago_hora_extra):
         conn.close()
 
 
-# ==== Cierres mensuales (sin anticipos/deducciones) ====
-
-def get_jornadas_entre(fecha_ini, fecha_fin):
-    """
-    Jornadas entre fechas (incluidas).
-    Retorna: (id, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra)
-    """
+# ========== TABLAS DE CIERRES ==========
+def create_cierres_tables():
     conn = connect_db()
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, trabajador, fecha, lote, actividad, dias, horas_normales, horas_extra
-            FROM jornadas
-            WHERE fecha >= %s AND fecha <= %s
-            ORDER BY fecha ASC, id ASC;
+            CREATE TABLE IF NOT EXISTS pagos_mes (
+                id SERIAL PRIMARY KEY,
+                mes_ini DATE NOT NULL,
+                mes_fin DATE NOT NULL,
+                creado_por TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                tarifa_dia NUMERIC NOT NULL,
+                tarifa_hora_extra NUMERIC NOT NULL,
+                total_nomina NUMERIC NOT NULL DEFAULT 0,
+                total_insumos NUMERIC NOT NULL DEFAULT 0,
+                total_general NUMERIC NOT NULL DEFAULT 0,
+                UNIQUE (mes_ini, mes_fin)
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pagos_mes_nomina (
+                id SERIAL PRIMARY KEY,
+                pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
+                trabajador TEXT NOT NULL,
+                dias INTEGER NOT NULL DEFAULT 0,
+                horas_extra NUMERIC NOT NULL DEFAULT 0,
+                monto_dias NUMERIC NOT NULL DEFAULT 0,
+                monto_hex NUMERIC NOT NULL DEFAULT 0,
+                total NUMERIC NOT NULL DEFAULT 0
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pagos_mes_insumos (
+                id SERIAL PRIMARY KEY,
+                pago_id INTEGER NOT NULL REFERENCES pagos_mes(id) ON DELETE CASCADE,
+                fecha DATE,
+                lote TEXT,
+                tipo TEXT,
+                producto TEXT,
+                etapa TEXT,
+                dosis TEXT,
+                cantidad NUMERIC,
+                precio_unitario NUMERIC,
+                costo_total NUMERIC
+            );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+# ========== QUERIES POR RANGO (para previews) ==========
+def get_jornadas_between(fecha_ini, fecha_fin):
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT * FROM jornadas
+            WHERE fecha BETWEEN %s AND %s
+            ORDER BY fecha DESC, id DESC;
         """, (fecha_ini, fecha_fin))
         return cur.fetchall()
     finally:
         conn.close()
 
-
-def crear_cierre_mes(mes_ini, mes_fin, creado_por=""):
-    """
-    Calcula y fija el pago por trabajador del mes [mes_ini..mes_fin]
-    aplicando tarifas globales (get_tarifas()).
-    """
-    jornadas = get_jornadas_entre(mes_ini, mes_fin)
-    pago_dia, pago_hex = get_tarifas()
-
-    # Acumular por trabajador
-    by_trab = {}
-    for (jid, trab, fecha, lote, act, dias, hnorm, hextra) in jornadas:
-        if trab not in by_trab:
-            by_trab[trab] = {"dias": 0, "hex": 0.0, "m_dias": 0.0, "m_hex": 0.0}
-        d  = int(dias or 0)
-        he = float(hextra or 0.0)
-        by_trab[trab]["dias"]   += d
-        by_trab[trab]["hex"]    += he
-        by_trab[trab]["m_dias"] += d  * pago_dia
-        by_trab[trab]["m_hex"]  += he * pago_hex
-
-    if not by_trab:
-        raise RuntimeError("No hay jornadas en ese mes. No se genera cierre.")
-
+def get_insumos_between(fecha_ini, fecha_fin):
     conn = connect_db()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
-        # Insertar/recuperar encabezado del cierre
         cur.execute("""
-            INSERT INTO pagos_mes (mes_ini, mes_fin, creado_por)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (mes_ini, mes_fin) DO NOTHING
-            RETURNING id;
-        """, (mes_ini, mes_fin, creado_por))
-        row = cur.fetchone()
-        if not row:
-            cur.execute("SELECT id FROM pagos_mes WHERE mes_ini=%s AND mes_fin=%s;",
-                        (mes_ini, mes_fin))
-            row = cur.fetchone()
-        pago_id = row[0]
+            SELECT id, fecha, lote, tipo, etapa, producto, dosis, cantidad, precio_unitario, costo_total
+            FROM insumos
+            WHERE fecha BETWEEN %s AND %s
+            ORDER BY fecha DESC, id DESC;
+        """, (fecha_ini, fecha_fin))
+        return cur.fetchall()
+    finally:
+        conn.close()
 
-        # Insertar detalle por trabajador
-        for trab, acc in by_trab.items():
-            monto_dias = round(acc["m_dias"], 2)
-            monto_hex  = round(acc["m_hex"], 2)
-            total      = round(monto_dias + monto_hex, 2)
-            cur.execute("""
-                INSERT INTO pagos_mes_detalle
-                (pago_id, trabajador, dias, horas_extra, monto_dias, monto_hex, total)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT DO NOTHING;
-            """, (pago_id, trab, acc["dias"], acc["hex"], monto_dias, monto_hex, total))
+# ========== CREAR / GUARDAR CIERRE MENSUAL ==========
+def crear_cierre_mensual(mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra, overwrite=False):
+    """
+    Crea un snapshot mensual de nómina + insumos en pagos_mes + pagos_mes_nomina + pagos_mes_insumos.
+    - mes_ini/mes_fin: 'YYYY-MM-DD'
+    - overwrite=True borra el cierre existente del mismo rango y lo vuelve a crear.
+    Retorna el pago_id del cierre creado.
+    """
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        # ¿Existe ya?
+        cur.execute("SELECT id FROM pagos_mes WHERE mes_ini=%s AND mes_fin=%s;", (mes_ini, mes_fin))
+        row = cur.fetchone()
+        if row and not overwrite:
+            raise ValueError("Ya existe un cierre para ese mes. Activa 'Sobrescribir' si quieres recrearlo.")
+        if row and overwrite:
+            cur.execute("DELETE FROM pagos_mes WHERE mes_ini=%s AND mes_fin=%s;", (mes_ini, mes_fin))
+            conn.commit()
+
+        # Nomina agregada por trabajador en el rango
+        cur.execute("""
+            SELECT trabajador,
+                   COALESCE(SUM(dias),0) AS dias,
+                   COALESCE(SUM(horas_extra),0) AS horas_extra
+            FROM jornadas
+            WHERE fecha BETWEEN %s AND %s
+            GROUP BY trabajador
+            ORDER BY trabajador;
+        """, (mes_ini, mes_fin))
+        nomina_rows = cur.fetchall()
+
+        # Totales de nómina
+        total_nomina = 0
+        detalle_nomina = []
+        for trab, dias, hextra in nomina_rows:
+            monto_dias = (dias or 0) * tarifa_dia
+            monto_hex  = (hextra or 0) * tarifa_hora_extra
+            total      = (monto_dias or 0) + (monto_hex or 0)
+            total_nomina += total
+            detalle_nomina.append((trab, dias or 0, float(hextra or 0), float(monto_dias or 0), float(monto_hex or 0), float(total or 0)))
+
+        # Insumos del rango
+        cur.execute("""
+            SELECT fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total
+            FROM insumos
+            WHERE fecha BETWEEN %s AND %s
+            ORDER BY fecha, id;
+        """, (mes_ini, mes_fin))
+        insumos_rows = cur.fetchall()
+
+        total_insumos = sum(float(r[-1] or 0) for r in insumos_rows)
+        total_general = float(total_nomina) + float(total_insumos)
+
+        # Cabecera
+        cur.execute("""
+            INSERT INTO pagos_mes
+                (mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra,
+                 total_nomina, total_insumos, total_general)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id;
+        """, (mes_ini, mes_fin, creado_por, tarifa_dia, tarifa_hora_extra,
+              total_nomina, total_insumos, total_general))
+        pago_id = cur.fetchone()[0]
+
+        # Detalle nómina
+        if detalle_nomina:
+            execute_values(
+                cur,
+                """
+                INSERT INTO pagos_mes_nomina
+                    (pago_id, trabajador, dias, horas_extra, monto_dias, monto_hex, total)
+                VALUES %s;
+                """,
+                [(pago_id, *row) for row in detalle_nomina]
+            )
+
+        # Detalle insumos (snapshot)
+        if insumos_rows:
+            execute_values(
+                cur,
+                """
+                INSERT INTO pagos_mes_insumos
+                    (pago_id, fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total)
+                VALUES %s;
+                """,
+                [(pago_id, *r) for r in insumos_rows]
+            )
 
         conn.commit()
         return pago_id
     finally:
         conn.close()
 
-
-def listar_cierres_mes():
-    """
-    Lista cierres mensuales:
-    (id, mes_ini, mes_fin, creado_por, created_at)
-    """
+# ========== LISTAR / LEER CIERRES ==========
+def listar_cierres():
     conn = connect_db()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, mes_ini, mes_fin, creado_por, created_at
+            SELECT id, mes_ini, mes_fin, creado_por, created_at, total_nomina, total_insumos, total_general
             FROM pagos_mes
-            ORDER BY mes_ini DESC, id DESC;
+            ORDER BY mes_ini DESC;
         """)
         return cur.fetchall()
     finally:
         conn.close()
 
-
-def get_cierre_mes_detalle(pago_id):
-    """
-    Detalle por trabajador del cierre mensual:
-    (trabajador, dias, horas_extra, monto_dias, monto_hex, total)
-    """
+def leer_cierre_detalle(pago_id):
     conn = connect_db()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     try:
         cur.execute("""
             SELECT trabajador, dias, horas_extra, monto_dias, monto_hex, total
-            FROM pagos_mes_detalle
+            FROM pagos_mes_nomina
             WHERE pago_id=%s
             ORDER BY trabajador;
         """, (pago_id,))
-        return cur.fetchall()
+        nomina = cur.fetchall()
+
+        cur.execute("""
+            SELECT fecha, lote, tipo, producto, etapa, dosis, cantidad, precio_unitario, costo_total
+            FROM pagos_mes_insumos
+            WHERE pago_id=%s
+            ORDER BY fecha, id;
+        """, (pago_id,))
+        insumos = cur.fetchall()
+
+        return nomina, insumos
     finally:
         conn.close()
+
 
 
 
