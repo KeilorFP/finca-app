@@ -4,8 +4,9 @@ import bcrypt
 import os
 import psycopg2
 from psycopg2.extras import execute_values
-import time
 from psycopg2 import OperationalError
+import time
+
 
 
 def connect_db():
@@ -673,6 +674,29 @@ def leer_cierre_detalle(pago_id):
         return nomina, insumos
     finally:
         conn.close()
+
+#arreglando el error
+
+def ensure_cierres_schema():
+    """Asegura que pagos_mes tenga las columnas nuevas; es idempotente."""
+    conn = connect_db()
+    cur = conn.cursor()
+    try:
+        # columnas que pueden faltar
+        cur.execute("""
+            ALTER TABLE pagos_mes
+            ADD COLUMN IF NOT EXISTS created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ADD COLUMN IF NOT EXISTS tarifa_dia        NUMERIC     NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS tarifa_hora_extra NUMERIC     NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_nomina      NUMERIC     NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_insumos     NUMERIC     NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS total_general     NUMERIC     NOT NULL DEFAULT 0
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 
 
 
