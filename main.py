@@ -327,7 +327,7 @@ if menu == "Añadir Empleado":
 # ============================
 # Cierres Mensuales (UI)
 # ============================
-if menu == "Cierres Mensuales":
+if menu == "Cierre Mensual":
     st.subheader("🧾 Cierres Mensuales (contabilidad)")
     from calendar import monthrange
 
@@ -1147,6 +1147,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
