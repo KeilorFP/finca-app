@@ -268,7 +268,7 @@ if menu == "Registrar Jornada":
                 st.success("✅ Jornada registrada")
 
         with st.expander("✏️ Editar último registro de jornada"):
-            ultima_jornada = get_last_jornada_by_date(str(fecha))
+            ultima_jornada = get_last_jornada_by_date(fecha=str(fecha), owner=OWNER)
             if ultima_jornada:
                 # Soporta tuplas de 8 (sin owner) o 9 columnas (con owner)
                 if len(ultima_jornada) == 9:
@@ -656,6 +656,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
