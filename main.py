@@ -351,17 +351,18 @@ if menu == "Registrar Jornada":
 
                 if st.button("Actualizar jornada"):
                     update_jornada(
-                        id=jornada_id,
-                        trabajador=nuevo_trabajador,
-                        fecha=nueva_fecha.strftime("%Y-%m-%d"),
-                        lote=nuevo_lote,
-                        actividad=nueva_actividad,
-                        dias=int(nuevos_dias),
-                        horas_normales=int(nuevos_dias) * 6,
-                        horas_extra=float(nuevas_horas_extra),
+                        jornada_id,                               # id (posicional)
+                        nuevo_trabajador,                         # trabajador
+                        nueva_fecha.strftime("%Y-%m-%d"),         # fecha
+                        nuevo_lote,                               # lote
+                        nueva_actividad,                          # actividad
+                        int(nuevos_dias),                         # dias
+                        int(nuevos_dias) * 6,                     # horas_normales
+                        float(nuevas_horas_extra),                # horas_extra
                     )
                     st.success("✅ Jornada actualizada correctamente.")
                     st.rerun()
+
             else:
                 st.info("No hay registros de jornada para editar.")
 
@@ -690,6 +691,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
