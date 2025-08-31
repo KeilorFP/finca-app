@@ -12,6 +12,8 @@ from database import (
     # creación/migraciones
     create_users_table, create_trabajadores_table, create_jornadas_table, create_insumos_table,
     create_tarifas_table, create_cierres_tables, ensure_cierres_schema,
+    # fincas
+    create_fincas_table, add_finca, get_all_fincas,
     # auth
     add_user, verify_user,
     # trabajadores
@@ -106,6 +108,7 @@ try:
     create_tarifas_table()
     create_cierres_tables()
     ensure_cierres_schema()
+    create_fincas_table()  # ← NUEVO
 except Exception as e:
     st.error(f"Error creando/migrando tablas: {e}")
     st.stop()
@@ -146,6 +149,19 @@ if not st.session_state.logged_in:
 
 OWNER = st.session_state.user  # <- MUY IMPORTANTE
 
+# ===== Fincas del usuario (catálogo) =====
+
+def opciones_fincas():
+    try:
+        fin = get_all_fincas(OWNER)
+    except Exception:
+        fin = []
+    if fin:
+        return fin, False
+    return LOTE_LISTA, True  # fallback hasta que el usuario agregue las suyas
+
+FINCAS, FINCAS_FB = opciones_fincas()
+
 # ===== Header =====
 st.title("📋 Panel de Control - Finca Cafetalera")
 st.write(f"👤 Usuario: **{OWNER}**")
@@ -156,8 +172,8 @@ with st.sidebar:
     menu = option_menu(
         None,
         ["Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
-         "Ver Registros","Añadir Empleado","Reporte Semanal (Dom–Sáb)","Tarifas","Cierre Mensual"],
-        icons=["calendar-check","fuel-pump","bezier","gem","droplet","journal-text","person-plus","bar-chart","cash","archive"],
+         "Ver Registros","Añadir Finca","Añadir Empleado","Reporte Semanal (Dom–Sáb)","Tarifas","Cierre Mensual"],
+        icons=["calendar-check","fuel-pump","bezier","gem","droplet","journal-text","map","person-plus","bar-chart","cash","archive"],
         default_index=0,
         styles={
             "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
@@ -195,6 +211,31 @@ if menu == "Añadir Empleado":
                     st.success("✅ Empleado registrado.")
                 else:
                     st.info("Ese empleado ya existe para tu cuenta.")
+
+# ===== Añadir Finca =====
+if menu == "Añadir Finca":
+    st.subheader("🏞️ Registrar Nueva Finca / Lote")
+    with st.form("form_finca"):
+        nombre_finca = st.text_input("Nombre de la finca o lote")
+        if st.form_submit_button("Registrar finca"):
+            if not nombre_finca.strip():
+                st.warning("⚠️ Escribe un nombre.")
+            else:
+                ok = add_finca(nombre_finca.strip(), OWNER)
+                if ok:
+                    st.success("✅ Finca registrada."); st.rerun()
+                else:
+                    st.info("Esa finca ya existe para tu cuenta.")
+    # Listado simple
+    try:
+        fincas_list = get_all_fincas(OWNER)
+    except Exception:
+        fincas_list = []
+    if fincas_list:
+        st.markdown("### 🌱 Tus fincas/lotes")
+        st.dataframe(pd.DataFrame({"Finca/Lote": fincas_list}), use_container_width=True)
+    else:
+        st.info("Aún no has agregado fincas.")
 
 # ===== Cierre Mensual =====
 if menu == "Cierre Mensual":
@@ -282,6 +323,8 @@ if menu == "Registrar Jornada":
     st.subheader("🧑‍🌾 Registrar Jornada Laboral")
 
     trabajadores_disponibles = get_all_trabajadores(OWNER)
+    if FINCAS_FB:
+        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     if not trabajadores_disponibles:
         st.warning("⚠️ No hay trabajadores registrados. Agrega uno primero.")
     else:
@@ -289,7 +332,7 @@ if menu == "Registrar Jornada":
         with st.form("form_jornada"):
             trabajador = st.selectbox("Selecciona un trabajador", trabajadores_disponibles)
             fecha = st.date_input("Fecha de trabajo", datetime.date.today())
-            lote = st.selectbox("Lote o parcela", LOTE_LISTA)
+            lote = st.selectbox("Lote o parcela", FINCAS)
             actividad = st.selectbox("Tipo de actividad", ACTIVIDADES)
             dias = st.number_input("Días trabajados", min_value=0, max_value=31, step=1)
             horas_extra = st.number_input("Horas extra trabajadas", min_value=0.0, step=0.5)
@@ -306,7 +349,7 @@ if menu == "Registrar Jornada":
                     dias=int(dias),
                     horas_normales=horas_normales,
                     horas_extra=float(horas_extra),
-                    owner=OWNER,  # ← muy importante para la separación por usuario
+                    owner=OWNER,  # ← separación por usuario
                 )
                 st.success("✅ Jornada registrada"); st.rerun()
 
@@ -349,10 +392,10 @@ if menu == "Registrar Jornada":
 
                 # Lote
                 try:
-                    idx_lote = LOTE_LISTA.index(lote_actual)
+                    idx_lote = FINCAS.index(lote_actual)
                 except ValueError:
                     idx_lote = 0
-                nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+                nuevo_lote = st.selectbox("Nuevo lote", FINCAS, index=idx_lote)
 
                 # Actividad
                 try:
@@ -412,9 +455,11 @@ if menu == "Registrar Jornada":
 # ===== Registrar Abono =====
 if menu == "Registrar Abono":
     st.subheader("🌿 Registrar Aplicación de Abono")
+    if FINCAS_FB:
+        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     with st.form("form_abonado"):
         fecha_abono = st.date_input("Fecha de aplicación de abono", datetime.date.today())
-        lote_abono = st.selectbox("Lote o parcela", LOTE_LISTA)
+        lote_abono = st.selectbox("Lote o parcela", FINCAS)
         etapa = st.selectbox("Etapa de abonado", ETAPAS_ABONO)
         producto = st.text_input("Nombre del producto (ej: 18-5-15, Multimag)")
         dosis = st.number_input("Dosis aplicada (g/planta)", min_value=0.0, step=0.1)
@@ -430,9 +475,9 @@ if menu == "Registrar Abono":
         ultima = get_last_abono_by_date(str(fecha_abono), OWNER)
         if ultima:
             (iid, fec, lote, tipo, etapa_act, prod_act, dosis_act, cant_act, precio_act, costo) = ultima
-            try: idx_lote = LOTE_LISTA.index(lote)
+            try: idx_lote = FINCAS.index(lote)
             except ValueError: idx_lote = 0
-            nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+            nuevo_lote = st.selectbox("Nuevo lote", FINCAS, index=idx_lote)
             try: idx_et = ETAPAS_ABONO.index(etapa_act)
             except ValueError: idx_et = 0
             nueva_etapa = st.selectbox("Nueva etapa", ETAPAS_ABONO, index=idx_et)
@@ -521,9 +566,11 @@ if menu == "Ver Registros":
 # ===== Registrar Fumigación =====
 if menu == "Registrar Fumigación":
     st.subheader("🧪 Registrar Fumigación")
+    if FINCAS_FB:
+        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     with st.form("form_fumigacion"):
         fecha_fum = st.date_input("Fecha de aplicación", datetime.date.today())
-        lote_fum = st.selectbox("Lote o parcela", LOTE_LISTA)
+        lote_fum = st.selectbox("Lote o parcela", FINCAS)
         producto = st.text_input("Nombre del producto (ej: Fungicida X, Insecticida Y)")
         plaga = st.text_input("Tipo de plaga o control (ej: Roya, Broca, Hongos)")
         dosis = st.text_input("Dosis aplicada por estañon (ej: 50 ml/estañon)")
@@ -539,9 +586,9 @@ if menu == "Registrar Fumigación":
         ult = get_last_fumigacion_by_date(str(fecha_fum), OWNER)
         if ult:
             (iid, fec, lote, tipo, plaga_act, prod_act, dosis_act, litros_act, precio_u, costo) = ult
-            try: idx_lote = LOTE_LISTA.index(lote)
+            try: idx_lote = FINCAS.index(lote)
             except ValueError: idx_lote = 0
-            nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+            nuevo_lote = st.selectbox("Nuevo lote", FINCAS, index=idx_lote)
             nueva_plaga = st.text_input("Nuevo plaga/control", value=plaga_act)
             nuevo_prod  = st.text_input("Nuevo producto", value=prod_act)
             nueva_dosis = st.text_input("Nueva dosis", value=dosis_act)
@@ -561,9 +608,11 @@ if menu == "Registrar Fumigación":
 # ===== Registrar Cal =====
 if menu == "Registrar Cal":
     st.subheader("🧱 Registrar Aplicación de Cal")
+    if FINCAS_FB:
+        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     with st.form("form_cal"):
         fecha_cal = st.date_input("Fecha de aplicación", datetime.date.today())
-        lote_cal = st.selectbox("Lote o parcela", LOTE_LISTA)
+        lote_cal = st.selectbox("Lote o parcela", FINCAS)
         tipo_cal = st.selectbox("Tipo de cal utilizada", TIPOS_CAL)
         cantidad = st.number_input("Cantidad aplicada (sacos 45 kg)", min_value=0.0, step=0.5)
         precio_saco = st.number_input("Precio por saco (₡)", min_value=0.0, step=100.0)
@@ -577,11 +626,11 @@ if menu == "Registrar Cal":
         ult = get_last_cal_by_date(str(fecha_cal), OWNER)
         if ult:
             (iid, fec, lote, tipo, etapa, prod, dosis, cant, precio_u, costo) = ult
-            try: idx_lote = LOTE_LISTA.index(lote)
+            try: idx_lote = FINCAS.index(lote)
             except ValueError: idx_lote = 0
             try: idx_tipo = TIPOS_CAL.index(tipo)
             except ValueError: idx_tipo = 0
-            nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+            nuevo_lote = st.selectbox("Nuevo lote", FINCAS, index=idx_lote)
             nuevo_tipo = st.selectbox("Nuevo tipo de cal", TIPOS_CAL, index=idx_tipo)
             nueva_cant = st.number_input("Nueva cantidad (sacos)", value=float(cant or 0), min_value=0.0, step=0.5)
             nuevo_precio = st.number_input("Nuevo precio por saco (₡)", value=float(precio_u or 0), min_value=0.0, step=100.0)
@@ -598,9 +647,11 @@ if menu == "Registrar Cal":
 # ===== Registrar Herbicida =====
 if menu == "Registrar Herbicida":
     st.subheader("🌾 Registrar Aplicación de Herbicida")
+    if FINCAS_FB:
+        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     with st.form("form_herbicida"):
         fecha_herb = st.date_input("Fecha de aplicación", datetime.date.today())
-        lote_herb = st.selectbox("Lote o parcela", LOTE_LISTA)
+        lote_herb = st.selectbox("Lote o parcela", FINCAS)
         tipo_herb = st.selectbox("Tipo de herbicida", TIPOS_HERBICIDA)
         producto  = st.text_input("Nombre del producto (ej: Glifosato 41%, Paraquat 20%)")
         dosis     = st.text_input("Dosis aplicada (ej: 80 ml/estañón)")
@@ -616,9 +667,9 @@ if menu == "Registrar Herbicida":
         ult = get_last_herbicida_by_date(str(fecha_herb), OWNER)
         if ult:
             (iid, fec, lote, tipo, etapa, prod, dosis_act, cant, precio_u, costo) = ult
-            try: idx_lote = LOTE_LISTA.index(lote)
+            try: idx_lote = FINCAS.index(lote)
             except ValueError: idx_lote = 0
-            nuevo_lote = st.selectbox("Nuevo lote", LOTE_LISTA, index=idx_lote)
+            nuevo_lote = st.selectbox("Nuevo lote", FINCAS, index=idx_lote)
             try: idx_tipo = TIPOS_HERBICIDA.index(tipo)
             except ValueError: idx_tipo = 0
             nuevo_tipo = st.selectbox("Nuevo tipo de herbicida", TIPOS_HERBICIDA, index=idx_tipo)
@@ -735,6 +786,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             pdf_bytes = pdf_resumen(resumen_min, inicio_sem, fin_sem)
             st.download_button("⬇️ Descargar resumen por trabajador (PDF)", data=pdf_bytes,
                                file_name=f"resumen_trabajador_{inicio_sem}_a_{fin_sem}.pdf", mime="application/pdf")
+
 
 
 
