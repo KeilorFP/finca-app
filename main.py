@@ -188,119 +188,161 @@ if NO_HAY_FIN:
     st.stop()  # bloquea el resto de la app hasta que exista al menos una finca
 
 
+# --- Estado de navegación ---
+if "nav_mode" not in st.session_state:
+    st.session_state.nav_mode = "menu"       # "menu" | "page"
+if "current_page" not in st.session_state:
+    st.session_state.current_page = None     # nombre de la página elegida
+
+def back_to_menu():
+    st.session_state.nav_mode = "menu"
+    st.session_state.current_page = None
+    st.rerun()
+
+def hide_sidebar():
+    # Oculta la sidebar cuando estamos en una página
+    st.markdown("""
+    <style>
+      [data-testid="stSidebar"] { display: none; }
+      /* opcional: ajusta el padding del contenido al ocultar sidebar */
+      .block-container { padding-left: 1rem; }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+
 # ===== Header =====
 st.title("📋 Panel de Control - Finca Cafetalera")
 st.write(f"👤 Usuario: **{OWNER}**")
 
 # ===== Sidebar =====
-with st.sidebar:
-    st.markdown("## 🧭 Menú Principal")
+if st.session_state.nav_mode == "menu":
+    with st.sidebar:
+        st.markdown("## 🧭 Menú Principal")
 
-    # --- Estado del usuario (contadores) ---
-    try:
-        _fincas = get_all_fincas(OWNER)
-    except Exception:
-        _fincas = []
-    try:
-        _empleados = get_all_trabajadores(OWNER)
-    except Exception:
-        _empleados = []
+        # --- Estado del usuario (contadores) ---
+        try:
+            _fincas = get_all_fincas(OWNER)
+        except Exception:
+            _fincas = []
+        try:
+            _empleados = get_all_trabajadores(OWNER)
+        except Exception:
+            _empleados = []
 
-    has_fincas = len(_fincas) > 0
-    has_empleados = len(_empleados) > 0
-    has_basics = has_fincas and has_empleados
+        has_fincas = len(_fincas) > 0
+        has_empleados = len(_empleados) > 0
+        has_basics = has_fincas and has_empleados
 
-    # Contadores (contexto inmediato)
-    st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
+        st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
 
-    # --- Modo simple/avanzado ---
-    modo_simple = st.toggle("Modo simple", value=not has_basics, help="Muestra solo lo esencial cuando estás empezando.")
+        # --- Modo simple/avanzado ---
+        modo_simple = st.toggle(
+            "Modo simple",
+            value=not has_basics,
+            help="Muestra solo lo esencial cuando estás empezando."
+        )
 
-    # Opciones e íconos (renombradas y ordenadas didácticamente)
-    opciones_avanzadas = [
-        "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
-        "Ver Registros","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
-        "Añadir Finca","Añadir Empleado","Tarifas"
-    ]
-    iconos_avanzados = ["calendar-check","fuel-pump","bezier","gem","droplet",
-                        "journal-text","bar-chart","archive",
-                        "map","person-plus","cash"]
+        # Opciones e íconos
+        opciones_avanzadas = [
+            "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
+            "Ver Registros","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
+            "Añadir Finca","Añadir Empleado","Tarifas"
+        ]
+        iconos_avanzados = ["calendar-check","fuel-pump","bezier","gem","droplet",
+                            "journal-text","bar-chart","archive",
+                            "map","person-plus","cash"]
 
-    opciones_simples = [
-        "Registrar Jornada","Ver Registros",
-        "Añadir Finca","Añadir Empleado","Tarifas"
-    ]
-    iconos_simples = ["calendar-check","journal-text","map","person-plus","cash"]
+        opciones_simples = [
+            "Registrar Jornada","Ver Registros",
+            "Añadir Finca","Añadir Empleado","Tarifas"
+        ]
+        iconos_simples = ["calendar-check","journal-text","map","person-plus","cash"]
 
-    opciones = opciones_simples if modo_simple else opciones_avanzadas
-    iconos = iconos_simples if modo_simple else iconos_avanzados
+        opciones = opciones_simples if modo_simple else opciones_avanzadas
+        iconos = iconos_simples if modo_simple else iconos_avanzados
 
-    # --- Default inteligente según estado ---
-    def _smart_default(opt_list):
-        if not has_fincas and "Añadir Finca" in opt_list:
-            return opt_list.index("Añadir Finca")
-        if not has_empleados and "Añadir Empleado" in opt_list:
-            return opt_list.index("Añadir Empleado")
-        # Si ya hay lo básico, conserva última selección si es posible
-        last = st.session_state.get("menu_last")
-        if last in opt_list:
-            return opt_list.index(last)
-        return 0
+        # --- Default inteligente según estado ---
+        def _smart_default(opt_list):
+            if not has_fincas and "Añadir Finca" in opt_list:
+                return opt_list.index("Añadir Finca")
+            if not has_empleados and "Añadir Empleado" in opt_list:
+                return opt_list.index("Añadir Empleado")
+            last = st.session_state.get("menu_last")
+            if last in opt_list:
+                return opt_list.index(last)
+            return 0
 
-    default_idx = _smart_default(opciones)
+        default_idx = _smart_default(opciones)
 
-    # --- Render del menú 
-    menu = option_menu(
-        None,
-        opciones,
-        icons=iconos,
-        default_index=default_idx,
-        styles={
-            "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
-            "icon":{"font-size":"18px","color":"#10b981"},
-            "nav-link":{"font-size":"15px","padding":"10px 12px","border-radius":"12px","margin":"6px 0",
-                        "color":"#e5e7eb","background-color":"#111827","border":"1px solid #374151"},
-            "nav-link-selected":{"background":"linear-gradient(90deg,#10b981,#059669)","color":"#fff",
-                                 "font-weight":"700","border":"1px solid #10b981","box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
-        },
-    )
-    # Guarda la última selección para próximas recargas
-    st.session_state["menu_last"] = menu
+        # --- Render del menú y cambio a modo "page" ---
+        choice = option_menu(
+            None,
+            opciones,
+            icons=iconos,
+            default_index=default_idx,
+            styles={
+                "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
+                "icon":{"font-size":"18px","color":"#10b981"},
+                "nav-link":{"font-size":"15px","padding":"10px 12px","border-radius":"12px","margin":"6px 0",
+                            "color":"#e5e7eb","background-color":"#111827","border":"1px solid #374151"},
+                "nav-link-selected":{"background":"linear-gradient(90deg,#10b981,#059669)","color":"#fff",
+                                     "font-weight":"700","border":"1px solid #10b981","box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
+            },
+        )
 
-    # --- Acciones rápidas de onboarding
+        # Persistencia y navegación
+        st.session_state["menu_last"] = choice
+        st.session_state.current_page = choice
+        st.session_state.nav_mode = "page"
+        st.rerun()
+
+    # Acciones rápidas de onboarding (solo visibles en modo menú)
     if not has_fincas:
-        st.info("Primero agrega al menos una finca para habilitar todas las capturas.")
-        with st.form("quick_add_finca", clear_on_submit=True):
-            _nf = st.text_input("➕ Primera finca/lote", placeholder="Ej. San Bernardo")
-            _okf = st.form_submit_button("Crear finca")
-        if _okf:
-            if (_nf or "").strip():
-                if add_finca(_nf.strip(), OWNER):
-                    st.success("✅ Finca creada.")
-                    st.rerun()
+        with st.sidebar:
+            st.info("Primero agrega al menos una finca para habilitar todas las capturas.")
+            with st.form("quick_add_finca", clear_on_submit=True):
+                _nf = st.text_input("➕ Primera finca/lote", placeholder="Ej. San Bernardo")
+                _okf = st.form_submit_button("Crear finca")
+            if _okf:
+                if (_nf or "").strip():
+                    if add_finca(_nf.strip(), OWNER):
+                        st.success("✅ Finca creada."); st.rerun()
+                    else:
+                        st.warning("Esa finca ya existe en tu cuenta.")
                 else:
-                    st.warning("Esa finca ya existe en tu cuenta.")
-            else:
-                st.warning("Escribe un nombre de finca.")
+                    st.warning("Escribe un nombre de finca.")
 
-    if has_fincas and not has_empleados:
-        st.info("Ahora agrega al menos un empleado para registrar jornadas.")
-        with st.form("quick_add_emp", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            with c1:
-                _ne = st.text_input("Nombre", placeholder="Ej. Juan")
-            with c2:
-                _ae = st.text_input("Apellido", placeholder="Ej. Pérez")
-            _oke = st.form_submit_button("Crear empleado")
-        if _oke:
-            if (_ne or "").strip() and (_ae or "").strip():
-                if add_trabajador(_ne.strip(), _ae.strip(), OWNER):
-                    st.success("✅ Empleado creado.")
-                    st.rerun()
+    if st.session_state.nav_mode == "menu" and has_fincas and not has_empleados:
+        with st.sidebar:
+            st.info("Ahora agrega al menos un empleado para registrar jornadas.")
+            with st.form("quick_add_emp", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    _ne = st.text_input("Nombre", placeholder="Ej. Juan")
+                with c2:
+                    _ae = st.text_input("Apellido", placeholder="Ej. Pérez")
+                _oke = st.form_submit_button("Crear empleado")
+            if _oke:
+                if (_ne or "").strip() and (_ae or "").strip():
+                    if add_trabajador(_ne.strip(), _ae.strip(), OWNER):
+                        st.success("✅ Empleado creado."); st.rerun()
+                    else:
+                        st.info("Ese empleado ya existe para tu cuenta.")
                 else:
-                    st.info("Ese empleado ya existe para tu cuenta.")
-            else:
-                st.warning("Completa nombre y apellido.")
+                    st.warning("Completa nombre y apellido.")
+
+else:
+    # Estamos en una página: ocultar la sidebar
+    hide_sidebar()
+
+# Determinar la página activa y mostrar botón volver
+if st.session_state.nav_mode == "page":
+    menu = st.session_state.current_page
+    st.button("← Volver al menú", on_click=back_to_menu)
+else:
+    menu = None  # normalmente se pasa a "page" inmediatamente tras elegir
+
 
 
 # ===== Tarifas (por usuario) =====
