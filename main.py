@@ -187,12 +187,19 @@ if NO_HAY_FIN:
 
     st.stop()  # bloquea el resto de la app hasta que exista al menos una finca
 
-
 # --- Estado de navegación ---
 if "nav_mode" not in st.session_state:
-    st.session_state.nav_mode = "menu"       # "menu" | "page"
+    st.session_state.nav_mode = "menu"      # "menu" | "page"
 if "current_page" not in st.session_state:
-    st.session_state.current_page = None     # nombre de la página elegida
+    st.session_state.current_page = None
+if "menu_last" not in st.session_state:
+    st.session_state.menu_last = None
+
+def set_page(page: str):
+    st.session_state.menu_last = page
+    st.session_state.current_page = page
+    st.session_state.nav_mode = "page"
+    st.rerun()
 
 def back_to_menu():
     st.session_state.nav_mode = "menu"
@@ -200,35 +207,46 @@ def back_to_menu():
     st.rerun()
 
 def hide_sidebar():
-    # Oculta la sidebar cuando estamos en una página
     st.markdown("""
     <style>
       [data-testid="stSidebar"] { display: none; }
-      /* opcional: ajusta el padding del contenido al ocultar sidebar */
-      .block-container { padding-left: 1rem; }
+      .block-container { padding-left: 1rem; } /* margen cuando no hay sidebar */
+      .appbar { position: sticky; top: 0; z-index: 999; padding: .6rem .8rem;
+                background: #0b1220cc; backdrop-filter: blur(8px);
+                border-bottom: 1px solid #0f2233; border-radius: 0 0 12px 12px; }
+      .appbar .title { font-weight: 700; color: #e5f5ee; }
     </style>
     """, unsafe_allow_html=True)
 
+def app_bar(title: str):
+    hide_sidebar()
+    with st.container():
+        st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1, 5, 1])
+        with c1:
+            st.button("← Volver", on_click=back_to_menu, help="Regresar al menú")
+        with c2:
+            st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
+        with c3:
+            pass  # espacio para acciones futuras (filtros, ayuda, etc.)
 
 
 # ===== Header =====
-st.title("📋 Panel de Control - Finca Cafetalera")
-st.write(f"👤 Usuario: **{OWNER}**")
+if st.session_state.nav_mode == "menu":
+    st.title("📋 Panel de Control - Finca Cafetalera")
+    st.write(f"👤 Usuario: **{OWNER}**")
+
 
 # ===== Sidebar =====
 if st.session_state.nav_mode == "menu":
     with st.sidebar:
         st.markdown("## 🧭 Menú Principal")
 
-        # --- Estado del usuario (contadores) ---
-        try:
-            _fincas = get_all_fincas(OWNER)
-        except Exception:
-            _fincas = []
-        try:
-            _empleados = get_all_trabajadores(OWNER)
-        except Exception:
-            _empleados = []
+        # Estado (contadores)
+        try: _fincas = get_all_fincas(OWNER)
+        except Exception: _fincas = []
+        try: _empleados = get_all_trabajadores(OWNER)
+        except Exception: _empleados = []
 
         has_fincas = len(_fincas) > 0
         has_empleados = len(_empleados) > 0
@@ -236,14 +254,9 @@ if st.session_state.nav_mode == "menu":
 
         st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
 
-        # --- Modo simple/avanzado ---
-        modo_simple = st.toggle(
-            "Modo simple",
-            value=not has_basics,
-            help="Muestra solo lo esencial cuando estás empezando."
-        )
+        # Modo simple
+        modo_simple = st.toggle("Modo simple", value=not has_basics, help="Muestra solo lo esencial cuando estás empezando.")
 
-        # Opciones e íconos
         opciones_avanzadas = [
             "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
             "Ver Registros","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
@@ -253,34 +266,23 @@ if st.session_state.nav_mode == "menu":
                             "journal-text","bar-chart","archive",
                             "map","person-plus","cash"]
 
-        opciones_simples = [
-            "Registrar Jornada","Ver Registros",
-            "Añadir Finca","Añadir Empleado","Tarifas"
-        ]
-        iconos_simples = ["calendar-check","journal-text","map","person-plus","cash"]
+        opciones_simples = ["Registrar Jornada","Ver Registros","Añadir Finca","Añadir Empleado","Tarifas"]
+        iconos_simples   = ["calendar-check","journal-text","map","person-plus","cash"]
 
         opciones = opciones_simples if modo_simple else opciones_avanzadas
-        iconos = iconos_simples if modo_simple else iconos_avanzados
+        iconos   = iconos_simples   if modo_simple else iconos_avanzados
 
-        # --- Default inteligente según estado ---
         def _smart_default(opt_list):
-            if not has_fincas and "Añadir Finca" in opt_list:
-                return opt_list.index("Añadir Finca")
-            if not has_empleados and "Añadir Empleado" in opt_list:
-                return opt_list.index("Añadir Empleado")
-            last = st.session_state.get("menu_last")
-            if last in opt_list:
-                return opt_list.index(last)
+            if not has_fincas and "Añadir Finca" in opt_list: return opt_list.index("Añadir Finca")
+            if not has_empleados and "Añadir Empleado" in opt_list: return opt_list.index("Añadir Empleado")
+            if st.session_state.menu_last in opt_list: return opt_list.index(st.session_state.menu_last)
             return 0
 
         default_idx = _smart_default(opciones)
 
-        # --- Render del menú y cambio a modo "page" ---
+        # Menú (no navega automáticamente)
         choice = option_menu(
-            None,
-            opciones,
-            icons=iconos,
-            default_index=default_idx,
+            None, opciones, icons=iconos, default_index=default_idx,
             styles={
                 "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
                 "icon":{"font-size":"18px","color":"#10b981"},
@@ -291,58 +293,24 @@ if st.session_state.nav_mode == "menu":
             },
         )
 
-        # Persistencia y navegación
-        st.session_state["menu_last"] = choice
-        st.session_state.current_page = choice
-        st.session_state.nav_mode = "page"
-        st.rerun()
+        # Acción explícita de abrir
+        abrir = st.button("Abrir", use_container_width=True)
 
-    # Acciones rápidas de onboarding (solo visibles en modo menú)
-    if not has_fincas:
-        with st.sidebar:
-            st.info("Primero agrega al menos una finca para habilitar todas las capturas.")
-            with st.form("quick_add_finca", clear_on_submit=True):
-                _nf = st.text_input("➕ Primera finca/lote", placeholder="Ej. San Bernardo")
-                _okf = st.form_submit_button("Crear finca")
-            if _okf:
-                if (_nf or "").strip():
-                    if add_finca(_nf.strip(), OWNER):
-                        st.success("✅ Finca creada."); st.rerun()
-                    else:
-                        st.warning("Esa finca ya existe en tu cuenta.")
-                else:
-                    st.warning("Escribe un nombre de finca.")
+        # Evita navegar automáticamente en el primer render
+        if st.session_state.menu_last is None:
+            st.session_state.menu_last = choice
 
-    if st.session_state.nav_mode == "menu" and has_fincas and not has_empleados:
-        with st.sidebar:
-            st.info("Ahora agrega al menos un empleado para registrar jornadas.")
-            with st.form("quick_add_emp", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    _ne = st.text_input("Nombre", placeholder="Ej. Juan")
-                with c2:
-                    _ae = st.text_input("Apellido", placeholder="Ej. Pérez")
-                _oke = st.form_submit_button("Crear empleado")
-            if _oke:
-                if (_ne or "").strip() and (_ae or "").strip():
-                    if add_trabajador(_ne.strip(), _ae.strip(), OWNER):
-                        st.success("✅ Empleado creado."); st.rerun()
-                    else:
-                        st.info("Ese empleado ya existe para tu cuenta.")
-                else:
-                    st.warning("Completa nombre y apellido.")
+        # Navega solo si el usuario lo pide o cambió de opción después
+        if abrir or (choice != st.session_state.menu_last):
+            set_page(choice)
 
-else:
-    # Estamos en una página: ocultar la sidebar
-    hide_sidebar()
 
-# Determinar la página activa y mostrar botón volver
+# Página activa y App Bar
 if st.session_state.nav_mode == "page":
     menu = st.session_state.current_page
-    st.button("← Volver al menú", on_click=back_to_menu)
+    app_bar(menu)   # ← barra superior con botón Volver y título
 else:
-    menu = None  # normalmente se pasa a "page" inmediatamente tras elegir
-
+    menu = None
 
 
 # ===== Tarifas (por usuario) =====
