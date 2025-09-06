@@ -31,6 +31,7 @@ from database import (
     # cierres
     get_jornadas_between, get_insumos_between,
     crear_cierre_mensual, listar_cierres, leer_cierre_detalle,
+    delete_trabajador_by_fullname, delete_finca,
 )
 
 # =============================
@@ -148,6 +149,18 @@ if not st.session_state.logged_in:
 
 OWNER = st.session_state.user  # <- MUY IMPORTANTE
 
+# ===== Fincas del usuario (catálogo) =====
+def opciones_fincas():
+    try:
+        fin = get_all_fincas(OWNER)
+    except Exception as e:
+        st.error(f"Error cargando fincas: {e}")
+        fin = []
+    return fin, (len(fin) == 0)
+
+# Calcula el estado ANTES de usar NO_HAY_FIN
+FINCAS, NO_HAY_FIN = opciones_fincas()
+
 # Si no hay fincas, mostramos un formulario para crear la primera y bloqueamos el resto.
 if NO_HAY_FIN:
     st.title("👩‍🌾 Configura tus fincas")
@@ -163,29 +176,17 @@ if NO_HAY_FIN:
             st.warning("El nombre es obligatorio.")
         else:
             try:
-                inserted = add_finca(nombre_limpio, OWNER)  # orden correcto
+                inserted = add_finca(nombre_limpio, OWNER)  # (nombre, owner)
                 if inserted:
                     st.success("✅ Finca creada.")
                 else:
                     st.warning("Ya existe una finca con ese nombre para este usuario.")
-                st.rerun()  # recarga para que FINCAS se actualice desde la BD
+                st.rerun()  # recarga para que FINCAS/NO_HAY_FIN se actualicen
             except Exception as e:
                 st.error(f"No se pudo guardar la finca: {e}")
 
     st.stop()  # bloquea el resto de la app hasta que exista al menos una finca
 
-
-# ===== Fincas del usuario (catálogo) =====
-
-def opciones_fincas():
-    try:
-        fin = get_all_fincas(OWNER)
-    except Exception as e:
-        st.error(f"Error cargando fincas: {e}")
-        fin = []
-    return fin, (len(fin) == 0)
-
-FINCAS, NO_HAY_FIN = opciones_fincas()
 
 # ===== Header =====
 st.title("📋 Panel de Control - Finca Cafetalera")
@@ -961,3 +962,16 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             pdf_bytes = pdf_resumen(resumen_min, inicio_sem, fin_sem)
             st.download_button("⬇️ Descargar resumen por trabajador (PDF)", data=pdf_bytes,
                                file_name=f"resumen_trabajador_{inicio_sem}_a_{fin_sem}.pdf", mime="application/pdf")
+
+            
+    
+
+
+
+                 
+        
+    
+        
+    
+
+
