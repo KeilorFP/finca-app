@@ -868,6 +868,36 @@ def leer_cierre_detalle(pago_id, owner):
         return nomina, insumos
     finally:
         conn.close()
+### ELIMINACION DE EMPLEADOS Y FINCAS SIN AFECTAR REGISTROS
+
+# --- database.py ---
+
+def delete_finca(nombre: str, owner: str) -> bool:
+    """Borra una finca del catálogo de un usuario. No toca jornadas/insumos históricos."""
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM fincas WHERE owner=%s AND nombre=%s;", (owner, nombre))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+def delete_trabajador_by_fullname(owner: str, full_name: str) -> bool:
+    """
+    Borra un trabajador por su 'Nombre Apellido' (formato que ya usas en get_all_trabajadores).
+    No toca jornadas históricas (allí está guardado como texto).
+    """
+    conn = connect_db(); cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM trabajadores WHERE owner=%s AND (nombre || ' ' || apellido)=%s;",
+            (owner, full_name),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
 
 
 
