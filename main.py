@@ -86,7 +86,6 @@ div.stButton>button:hover{ background:linear-gradient(90deg,#059669,#10b981)!imp
 )
 
 # ===== Catálogos =====
-LOTE_LISTA = ["Bijagual Fernando", "Bijagual Brothers", "El Alto", "Quebradaonda", "San Bernardo"]
 ACTIVIDADES = ["Herbiciar","Abonado","Fumigación","Poda","Desije","Encalado","Resiembra","Siembra","Eliminar sombra","Otra"]
 ETAPAS_ABONO = ["1ra Abonada","2da Abonada","3ra Abonada","4ta Abonada"]
 TIPOS_HERBICIDA = ["Selectivo","No selectivo","Sistemico","De contacto","Otro"]
@@ -149,18 +148,44 @@ if not st.session_state.logged_in:
 
 OWNER = st.session_state.user  # <- MUY IMPORTANTE
 
+# Si no hay fincas, mostramos un formulario para crear la primera y bloqueamos el resto.
+if NO_HAY_FIN:
+    st.title("👩‍🌾 Configura tus fincas")
+    st.info("Aún no tienes fincas. Agrega al menos una para empezar.")
+
+    with st.form("form_nueva_finca", clear_on_submit=True):
+        nombre = st.text_input("Nombre de la finca *", placeholder="Ej. Bijagual Fernando")
+        guardar = st.form_submit_button("Guardar")
+
+    if guardar:
+        nombre_limpio = (nombre or "").strip()
+        if not nombre_limpio:
+            st.warning("El nombre es obligatorio.")
+        else:
+            try:
+                inserted = add_finca(nombre_limpio, OWNER)  # orden correcto
+                if inserted:
+                    st.success("✅ Finca creada.")
+                else:
+                    st.warning("Ya existe una finca con ese nombre para este usuario.")
+                st.rerun()  # recarga para que FINCAS se actualice desde la BD
+            except Exception as e:
+                st.error(f"No se pudo guardar la finca: {e}")
+
+    st.stop()  # bloquea el resto de la app hasta que exista al menos una finca
+
+
 # ===== Fincas del usuario (catálogo) =====
 
 def opciones_fincas():
     try:
         fin = get_all_fincas(OWNER)
-    except Exception:
+    except Exception as e:
+        st.error(f"Error cargando fincas: {e}")
         fin = []
-    if fin:
-        return fin, False
-    return LOTE_LISTA, True  # fallback hasta que el usuario agregue las suyas
+    return fin, (len(fin) == 0)
 
-FINCAS, FINCAS_FB = opciones_fincas()
+FINCAS, NO_HAY_FIN = opciones_fincas()
 
 # ===== Header =====
 st.title("📋 Panel de Control - Finca Cafetalera")
@@ -169,12 +194,66 @@ st.write(f"👤 Usuario: **{OWNER}**")
 # ===== Sidebar =====
 with st.sidebar:
     st.markdown("## 🧭 Menú Principal")
+
+    # --- Estado del usuario (contadores) ---
+    try:
+        _fincas = get_all_fincas(OWNER)
+    except Exception:
+        _fincas = []
+    try:
+        _empleados = get_all_trabajadores(OWNER)
+    except Exception:
+        _empleados = []
+
+    has_fincas = len(_fincas) > 0
+    has_empleados = len(_empleados) > 0
+    has_basics = has_fincas and has_empleados
+
+    # Contadores (contexto inmediato)
+    st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
+
+    # --- Modo simple/avanzado ---
+    modo_simple = st.toggle("Modo simple", value=not has_basics, help="Muestra solo lo esencial cuando estás empezando.")
+
+    # Opciones e íconos (renombradas y ordenadas didácticamente)
+    opciones_avanzadas = [
+        "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
+        "Ver Registros","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
+        "Añadir Finca","Añadir Empleado","Tarifas"
+    ]
+    iconos_avanzados = ["calendar-check","fuel-pump","bezier","gem","droplet",
+                        "journal-text","bar-chart","archive",
+                        "map","person-plus","cash"]
+
+    opciones_simples = [
+        "Registrar Jornada","Ver Registros",
+        "Añadir Finca","Añadir Empleado","Tarifas"
+    ]
+    iconos_simples = ["calendar-check","journal-text","map","person-plus","cash"]
+
+    opciones = opciones_simples if modo_simple else opciones_avanzadas
+    iconos = iconos_simples if modo_simple else iconos_avanzados
+
+    # --- Default inteligente según estado ---
+    def _smart_default(opt_list):
+        if not has_fincas and "Añadir Finca" in opt_list:
+            return opt_list.index("Añadir Finca")
+        if not has_empleados and "Añadir Empleado" in opt_list:
+            return opt_list.index("Añadir Empleado")
+        # Si ya hay lo básico, conserva última selección si es posible
+        last = st.session_state.get("menu_last")
+        if last in opt_list:
+            return opt_list.index(last)
+        return 0
+
+    default_idx = _smart_default(opciones)
+
+    # --- Render del menú 
     menu = option_menu(
         None,
-        ["Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
-         "Ver Registros","Añadir Finca","Añadir Empleado","Reporte Semanal (Dom–Sáb)","Tarifas","Cierre Mensual"],
-        icons=["calendar-check","fuel-pump","bezier","gem","droplet","journal-text","map","person-plus","bar-chart","cash","archive"],
-        default_index=0,
+        opciones,
+        icons=iconos,
+        default_index=default_idx,
         styles={
             "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
             "icon":{"font-size":"18px","color":"#10b981"},
@@ -184,6 +263,44 @@ with st.sidebar:
                                  "font-weight":"700","border":"1px solid #10b981","box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
         },
     )
+    # Guarda la última selección para próximas recargas
+    st.session_state["menu_last"] = menu
+
+    # --- Acciones rápidas de onboarding
+    if not has_fincas:
+        st.info("Primero agrega al menos una finca para habilitar todas las capturas.")
+        with st.form("quick_add_finca", clear_on_submit=True):
+            _nf = st.text_input("➕ Primera finca/lote", placeholder="Ej. San Bernardo")
+            _okf = st.form_submit_button("Crear finca")
+        if _okf:
+            if (_nf or "").strip():
+                if add_finca(_nf.strip(), OWNER):
+                    st.success("✅ Finca creada.")
+                    st.rerun()
+                else:
+                    st.warning("Esa finca ya existe en tu cuenta.")
+            else:
+                st.warning("Escribe un nombre de finca.")
+
+    if has_fincas and not has_empleados:
+        st.info("Ahora agrega al menos un empleado para registrar jornadas.")
+        with st.form("quick_add_emp", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                _ne = st.text_input("Nombre", placeholder="Ej. Juan")
+            with c2:
+                _ae = st.text_input("Apellido", placeholder="Ej. Pérez")
+            _oke = st.form_submit_button("Crear empleado")
+        if _oke:
+            if (_ne or "").strip() and (_ae or "").strip():
+                if add_trabajador(_ne.strip(), _ae.strip(), OWNER):
+                    st.success("✅ Empleado creado.")
+                    st.rerun()
+                else:
+                    st.info("Ese empleado ya existe para tu cuenta.")
+            else:
+                st.warning("Completa nombre y apellido.")
+
 
 # ===== Tarifas (por usuario) =====
 if menu == "Tarifas":
@@ -212,6 +329,35 @@ if menu == "Añadir Empleado":
                 else:
                     st.info("Ese empleado ya existe para tu cuenta.")
 
+    with st.expander("🗑️ Eliminar empleado"):
+        empleados = get_all_trabajadores(OWNER)  # lista "Nombre Apellido"
+        if not empleados:
+            st.info("No hay empleados registrados.")
+        else:
+            emp_sel = st.selectbox("Selecciona el empleado a eliminar", empleados, key="del_emp_sel")
+            confirmar = st.checkbox("Estoy seguro/a de eliminar este empleado (no afecta registros históricos)")
+            if st.button("Eliminar empleado"):
+                if not confirmar:
+                    st.warning("Marca la casilla de confirmación antes de eliminar.")
+                else:
+                    ok = delete_trabajador_by_fullname(OWNER, emp_sel)
+                    if ok:
+                        st.success("✅ Empleado eliminado del catálogo.")
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar (verifica el nombre).")
+    # Listado simple
+    try:
+        empleados_list = get_all_trabajadores(OWNER)  # devuelve ["Nombre Apellido", ...]
+    except Exception:
+        empleados_list = []
+
+    if empleados_list:
+        st.markdown("### 👥 Tus empleados")
+        st.dataframe(pd.DataFrame({"Empleado": empleados_list}), use_container_width=True)
+    else:
+        st.info("Aún no has agregado empleados.")
+
 # ===== Añadir Finca =====
 if menu == "Añadir Finca":
     st.subheader("🏞️ Registrar Nueva Finca / Lote")
@@ -226,6 +372,24 @@ if menu == "Añadir Finca":
                     st.success("✅ Finca registrada."); st.rerun()
                 else:
                     st.info("Esa finca ya existe para tu cuenta.")
+    # ⤵️ NUEVO: eliminar finca desde catálogo (no borra registros)
+    with st.expander("🗑️ Eliminar finca"):
+        FINCAS, NO_HAY_FIN = opciones_fincas()
+        if NO_HAY_FIN:
+            st.info("No hay fincas registradas.")
+        else:
+            finca_sel = st.selectbox("Selecciona la finca a eliminar", FINCAS, key="del_finca_sel")
+            confirmar_f = st.checkbox("Estoy seguro/a de eliminar esta finca (no afecta registros históricos)")
+            if st.button("Eliminar finca"):
+                if not confirmar_f:
+                    st.warning("Marca la casilla de confirmación antes de eliminar.")
+                else:
+                    ok = delete_finca(finca_sel, OWNER)  # misma firma (nombre, owner) que add_finca
+                    if ok:
+                        st.success("✅ Finca eliminada del catálogo.")
+                        st.rerun()
+                    else:
+                        st.error("No se pudo eliminar (verifica el nombre).")
     # Listado simple
     try:
         fincas_list = get_all_fincas(OWNER)
@@ -322,11 +486,14 @@ if menu == "Cierre Mensual":
 if menu == "Registrar Jornada":
     st.subheader("🧑‍🌾 Registrar Jornada Laboral")
 
+    FINCAS, NO_HAY_FIN = opciones_fincas()   
+    if NO_HAY_FIN or not FINCAS:
+        st.warning("⚠️ No hay fincas registradas. Ve a **Añadir Finca** para crear al menos una.")
+        st.stop() 
     trabajadores_disponibles = get_all_trabajadores(OWNER)
-    if FINCAS_FB:
-        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
     if not trabajadores_disponibles:
         st.warning("⚠️ No hay trabajadores registrados. Agrega uno primero.")
+        st.stop() 
     else:
         # ---- Formulario de alta ----
         with st.form("form_jornada"):
@@ -455,8 +622,10 @@ if menu == "Registrar Jornada":
 # ===== Registrar Abono =====
 if menu == "Registrar Abono":
     st.subheader("🌿 Registrar Aplicación de Abono")
-    if FINCAS_FB:
-        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
+    FINCAS, NO_HAY_FIN = opciones_fincas()   # por qué: single source of truth (BD)
+    if NO_HAY_FIN or not FINCAS:
+        st.warning("⚠️ No hay fincas registradas. Ve a **Añadir Finca** para crear al menos una.")
+        st.stop()  
     with st.form("form_abonado"):
         fecha_abono = st.date_input("Fecha de aplicación de abono", datetime.date.today())
         lote_abono = st.selectbox("Lote o parcela", FINCAS)
@@ -566,8 +735,10 @@ if menu == "Ver Registros":
 # ===== Registrar Fumigación =====
 if menu == "Registrar Fumigación":
     st.subheader("🧪 Registrar Fumigación")
-    if FINCAS_FB:
-        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
+    FINCAS, NO_HAY_FIN = opciones_fincas()
+    if NO_HAY_FIN or not FINCAS:
+        st.warning("⚠️ No hay fincas registradas. Ve a **Añadir Finca** para crear al menos una.")
+        st.stop()
     with st.form("form_fumigacion"):
         fecha_fum = st.date_input("Fecha de aplicación", datetime.date.today())
         lote_fum = st.selectbox("Lote o parcela", FINCAS)
@@ -608,8 +779,10 @@ if menu == "Registrar Fumigación":
 # ===== Registrar Cal =====
 if menu == "Registrar Cal":
     st.subheader("🧱 Registrar Aplicación de Cal")
-    if FINCAS_FB:
-        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
+    FINCAS, NO_HAY_FIN = opciones_fincas()
+    if NO_HAY_FIN or not FINCAS:
+        st.warning("⚠️ No hay fincas registradas. Ve a **Añadir Finca** para crear al menos una.")
+        st.stop()
     with st.form("form_cal"):
         fecha_cal = st.date_input("Fecha de aplicación", datetime.date.today())
         lote_cal = st.selectbox("Lote o parcela", FINCAS)
@@ -647,8 +820,10 @@ if menu == "Registrar Cal":
 # ===== Registrar Herbicida =====
 if menu == "Registrar Herbicida":
     st.subheader("🌾 Registrar Aplicación de Herbicida")
-    if FINCAS_FB:
-        st.caption("ℹ️ Usando lista de fincas de ejemplo. Ve a **Añadir Finca** para registrar las tuyas.")
+    FINCAS, NO_HAY_FIN = opciones_fincas()
+    if NO_HAY_FIN or not FINCAS:
+        st.warning("⚠️ No hay fincas registradas. Ve a **Añadir Finca** para crear al menos una.")
+        st.stop()
     with st.form("form_herbicida"):
         fecha_herb = st.date_input("Fecha de aplicación", datetime.date.today())
         lote_herb = st.selectbox("Lote o parcela", FINCAS)
@@ -786,32 +961,3 @@ if menu == "Reporte Semanal (Dom–Sáb)":
             pdf_bytes = pdf_resumen(resumen_min, inicio_sem, fin_sem)
             st.download_button("⬇️ Descargar resumen por trabajador (PDF)", data=pdf_bytes,
                                file_name=f"resumen_trabajador_{inicio_sem}_a_{fin_sem}.pdf", mime="application/pdf")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
