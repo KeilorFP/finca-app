@@ -898,6 +898,157 @@ def delete_trabajador_by_fullname(owner: str, full_name: str) -> bool:
     finally:
         conn.close()
 
+# ===== Planificador de labores (con recurrencia) =====
+def create_plan_table():
+    conn = connect_db(); cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS plan_labores (
+        id SERIAL PRIMARY KEY,
+        owner TEXT NOT NULL,
+        fecha DATE NOT NULL,
+        lote TEXT NOT NULL,
+        tipo TEXT NOT NULL,              -- Jornada | Abono | Fumigación | Cal | Herbicida
+        trabajador TEXT,                 -- solo si tipo = Jornada
+        actividad TEXT,                  -- actividad de jornada
+        etapa TEXT,                      -- etapa/plaga/tipo (según insumo)
+        producto TEXT,                   -- producto de insumo
+        dosis TEXT,                      -- dosis (texto)
+        cantidad NUMERIC,                -- sacos/litros/etc
+        precio_unitario NUMERIC,        -- precio por unidad
+        dias INTEGER,                    -- si es Jornada
+        horas_extra NUMERIC,             -- si es Jornada
+        estado TEXT NOT NULL DEFAULT 'pendiente',  -- pendiente | realizado | cancelado
+        -- Recurrencia:
+        recur_every_days INTEGER,        -- cada N días (ej. 45, 65)
+        recur_times INTEGER,             -- cuántas veces crear (incluido el actual). NULL = ilimitado
+        recur_autorenew BOOLEAN NOT NULL DEFAULT FALSE,
+        recur_parent INTEGER,            -- id del plan "padre" si es una ocurrencia generada
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        done_at TIMESTAMPTZ,
+        realizado_por TEXT
+    );
+    """)
+    # Migraciones idempotentes
+    cur.execute("ALTER TABLE plan_labores ADD COLUMN IF NOT EXISTS recur_every_days INTEGER;")
+    cur.execute("ALTER TABLE plan_labores ADD COLUMN IF NOT EXISTS recur_times INTEGER;")
+    cur.execute("ALTER TABLE plan_labores ADD COLUMN IF NOT EXISTS recur_autorenew BOOLEAN NOT NULL DEFAULT FALSE;")
+    cur.execute("ALTER TABLE plan_labores ADD COLUMN IF NOT EXISTS recur_parent INTEGER;")
+    conn.commit(); conn.close()
+
+def add_plan(owner, fecha, lote, tipo, trabajador=None, actividad=None,
+             etapa=None, producto=None, dosis=None,
+             cantidad=None, precio_unitario=None, dias=None, horas_extra=None,
+             recur_every_days=None, recur_times=None, recur_autorenew=False, recur_parent=None):
+    conn = connect_db(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO plan_labores(owner, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+                                 cantidad, precio_unitario, dias, horas_extra,
+                                 recur_every_days, recur_times, recur_autorenew, recur_parent)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,%s)
+        RETURNING id;
+    """, (owner, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+          cantidad, precio_unitario, dias, horas_extra,
+          recur_every_days, recur_times, recur_autorenew, recur_parent))
+    pid = cur.fetchone()[0]
+    conn.commit(); conn.close()
+    return pid
+
+def list_plans(owner, start_date, end_date, estado=None):
+    conn = connect_db(); cur = conn.cursor()
+    if estado:
+        cur.execute("""
+            SELECT id, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+                   cantidad, precio_unitario, dias, horas_extra, estado,
+                   recur_every_days, recur_times, recur_autorenew
+            FROM plan_labores
+            WHERE owner=%s AND fecha BETWEEN %s AND %s AND estado=%s
+            ORDER BY fecha, lote, id;
+        """, (owner, start_date, end_date, estado))
+    else:
+        cur.execute("""
+            SELECT id, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+                   cantidad, precio_unitario, dias, horas_extra, estado,
+                   recur_every_days, recur_times, recur_autorenew
+            FROM plan_labores
+            WHERE owner=%s AND fecha BETWEEN %s AND %s
+            ORDER BY fecha, lote, id;
+        """, (owner, start_date, end_date))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def get_plan(owner, plan_id):
+    conn = connect_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT id, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+               cantidad, precio_unitario, dias, horas_extra, estado,
+               recur_every_days, recur_times, recur_autorenew
+        FROM plan_labores
+        WHERE owner=%s AND id=%s
+    """, (owner, plan_id))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def mark_plan_done_and_autorenew(owner, plan_id, realizado_por):
+    """
+    Marca como realizado y, si el plan tiene recurrencia activa, crea la próxima ocurrencia.
+    Si recur_times es NULL => ilimitado. Si es entero, se decrementa.
+    """
+    # 1) Traer el plan
+    plan = get_plan(owner, plan_id)
+    if not plan:
+        return False
+    (pid, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+     cantidad, precio_u, dias, hextra, estado,
+     every, times, autorenew) = plan
+
+    conn = connect_db(); cur = conn.cursor()
+    # 2) Marcar como realizado
+    cur.execute("""
+        UPDATE plan_labores
+        SET estado='realizado', done_at=NOW(), realizado_por=%s
+        WHERE owner=%s AND id=%s
+    """, (realizado_por, owner, plan_id))
+
+    # 3) Crear próxima ocurrencia si corresponde
+    should_create_next = autorenew and every is not None and every > 0
+    if should_create_next:
+        # calcular nueva fecha
+        next_date = fecha + datetime.timedelta(days=int(every))
+        # calcular nuevo contador
+        new_times = None
+        if times is not None:
+            # times cuenta la ocurrencia actual también; al crear la siguiente, restamos 1
+            new_times = max(0, int(times) - 1)
+
+        if new_times is None or new_times > 0:
+            cur.execute("""
+                INSERT INTO plan_labores(owner, fecha, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+                                         cantidad, precio_unitario, dias, horas_extra,
+                                         estado, recur_every_days, recur_times, recur_autorenew, recur_parent)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,
+                        'pendiente', %s, %s, %s, %s)
+            """, (owner, next_date, lote, tipo, trabajador, actividad, etapa, producto, dosis,
+                  cantidad, precio_u, dias, hextra,
+                  every, new_times, True, pid))
+
+    conn.commit(); conn.close()
+    return True
+
+def postpone_plan(owner, plan_id, days):
+    """Posponer (snooze) N días."""
+    conn = connect_db(); cur = conn.cursor()
+    cur.execute("UPDATE plan_labores SET fecha = fecha + (%s || ' days')::interval WHERE owner=%s AND id=%s",
+                (str(int(days)), owner, plan_id))
+    conn.commit(); conn.close()
+    return True
+
+
+
 
 
 
