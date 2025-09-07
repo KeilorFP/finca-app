@@ -176,6 +176,8 @@ def set_page(page: str):
 def back_to_menu():
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
+    st.session_state.menu_last = None  
+    st.rerun()
 
 
 def hide_sidebar():
@@ -208,17 +210,20 @@ if st.session_state.nav_mode == "menu":
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
 
-
 # ===== Sidebar =====
 if st.session_state.nav_mode == "menu":
     with st.sidebar:
         st.markdown("## 🧭 Menú Principal")
 
         # Estado (contadores)
-        try: _fincas = get_all_fincas(OWNER)
-        except Exception: _fincas = []
-        try: _empleados = get_all_trabajadores(OWNER)
-        except Exception: _empleados = []
+        try:
+            _fincas = get_all_fincas(OWNER)
+        except Exception:
+            _fincas = []
+        try:
+            _empleados = get_all_trabajadores(OWNER)
+        except Exception:
+            _empleados = []
 
         has_fincas = len(_fincas) > 0
         has_empleados = len(_empleados) > 0
@@ -227,7 +232,11 @@ if st.session_state.nav_mode == "menu":
         st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
 
         # Modo simple
-        modo_simple = st.toggle("Modo simple", value=not has_basics, help="Muestra solo lo esencial cuando estás empezando.")
+        modo_simple = st.toggle(
+            "Modo simple",
+            value=not has_basics,
+            help="Muestra solo lo esencial cuando estás empezando."
+        )
 
         opciones_avanzadas = [
             "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
@@ -241,20 +250,19 @@ if st.session_state.nav_mode == "menu":
         opciones_simples = ["Registrar Jornada","Ver Registros","Añadir Finca","Añadir Empleado","Tarifas"]
         iconos_simples   = ["calendar-check","journal-text","map","person-plus","cash"]
 
-        opciones = opciones_simples if modo_simple else opciones_avanzadas
-        iconos   = iconos_simples   if modo_simple else iconos_avanzados
+        # Base según modo
+        opciones_base = opciones_simples if modo_simple else opciones_avanzadas
+        iconos_base   = iconos_simples   if modo_simple else iconos_avanzados
 
-        def _smart_default(opt_list):
-            if not has_fincas and "Añadir Finca" in opt_list: return opt_list.index("Añadir Finca")
-            if not has_empleados and "Añadir Empleado" in opt_list: return opt_list.index("Añadir Empleado")
-            if st.session_state.menu_last in opt_list: return opt_list.index(st.session_state.menu_last)
-            return 0
+        # Opción neutra al inicio para evitar auto-entrada
+        opciones_ui = ["🏠 Inicio"] + opciones_base
+        iconos_ui   = ["house"] + iconos_base
 
-        default_idx = _smart_default(opciones)
-
-        # Menú (no navega automáticamente)
         choice = option_menu(
-            None, opciones, icons=iconos, default_index=default_idx,
+            None,
+            opciones_ui,
+            icons=iconos_ui,
+            default_index=0,                 # ← SIEMPRE inicia en "Inicio"
             styles={
                 "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
                 "icon":{"font-size":"18px","color":"#10b981"},
@@ -263,15 +271,16 @@ if st.session_state.nav_mode == "menu":
                 "nav-link-selected":{"background":"linear-gradient(90deg,#10b981,#059669)","color":"#fff",
                                      "font-weight":"700","border":"1px solid #10b981","box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
             },
+            key="main_menu"
         )
 
-        # Navegación inmediata al cambiar de opción (sin botón)
-        if st.session_state.menu_last is None:
-            set_page(choice)  
-        elif choice != st.session_state.menu_last:
-            set_page(choice)  
-
-
+        # Navegación: si eligen algo distinto de Inicio, abre la página
+        if choice == "🏠 Inicio":
+            st.session_state.menu_last = None  # menú en reposo
+        else:
+            if st.session_state.get("menu_last") != choice:
+                st.session_state.menu_last = choice
+                set_page(choice)  # ← oculta menú y muestra la página
 
 # Página activa y App Bar
 if st.session_state.nav_mode == "page":
@@ -951,6 +960,5 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
-
 
 
