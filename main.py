@@ -124,23 +124,18 @@ def login():
         if st.button("Entrar"):
             try:
                 if verify_user(username, password):
-                    st.session_state.logged_in = True
-                    st.session_state.user = username
+                    st.session_state.update({
+                        "logged_in": True,
+                        "user": username,
+                        "nav_mode": "menu",      # ← abre el menú
+                        "current_page": None,
+                        "menu_last": None,
+                    })
                     st.rerun()
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
             except Exception as e:
                 st.error(f"Error al verificar usuario: {e}")
-    else:
-        st.subheader("Crear nuevo usuario")
-        new_user = st.text_input("👤 Nuevo usuario")
-        new_pass = st.text_input("🔑 Nueva contraseña", type="password")
-        if st.button("Registrar"):
-            try:
-                add_user(new_user, new_pass)
-                st.success("✅ Usuario creado. Ya puedes iniciar sesión.")
-            except Exception as e:
-                st.error(f"⚠️ No se pudo crear: {e}")
 
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "user" not in st.session_state: st.session_state.user = ""
@@ -160,32 +155,9 @@ def opciones_fincas():
 
 # Calcula el estado ANTES de usar NO_HAY_FIN
 FINCAS, NO_HAY_FIN = opciones_fincas()
-
-# Si no hay fincas, mostramos un formulario para crear la primera y bloqueamos el resto.
-if NO_HAY_FIN:
-    st.title("👩‍🌾 Configura tus fincas")
-    st.info("Aún no tienes fincas. Agrega al menos una para empezar.")
-
-    with st.form("form_nueva_finca", clear_on_submit=True):
-        nombre = st.text_input("Nombre de la finca *", placeholder="Ej. Bijagual Fernando")
-        guardar = st.form_submit_button("Guardar")
-
-    if guardar:
-        nombre_limpio = (nombre or "").strip()
-        if not nombre_limpio:
-            st.warning("El nombre es obligatorio.")
-        else:
-            try:
-                inserted = add_finca(nombre_limpio, OWNER)  # (nombre, owner)
-                if inserted:
-                    st.success("✅ Finca creada.")
-                else:
-                    st.warning("Ya existe una finca con ese nombre para este usuario.")
-                st.rerun()  # recarga para que FINCAS/NO_HAY_FIN se actualicen
-            except Exception as e:
-                st.error(f"No se pudo guardar la finca: {e}")
-
-    st.stop()  # bloquea el resto de la app hasta que exista al menos una finca
+# Mensaje si no hay fincas y está en el menú
+if NO_HAY_FIN and st.session_state.get("nav_mode") == "menu":
+    st.info("Aún no tienes fincas. Ve a **Añadir Finca** en el menú para crear la primera.")
 
 # --- Estado de navegación ---
 if "nav_mode" not in st.session_state:
@@ -199,6 +171,7 @@ def set_page(page: str):
     st.session_state.menu_last = page
     st.session_state.current_page = page
     st.session_state.nav_mode = "page"
+    st.rerun()  
 
 def back_to_menu():
     st.session_state.nav_mode = "menu"
@@ -981,6 +954,5 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
-
 
 
