@@ -177,7 +177,6 @@ def back_to_menu():
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
     st.session_state.menu_last = None  
-    st.rerun()
 
 
 def hide_sidebar():
@@ -960,5 +959,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
