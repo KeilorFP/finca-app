@@ -199,12 +199,11 @@ def set_page(page: str):
     st.session_state.menu_last = page
     st.session_state.current_page = page
     st.session_state.nav_mode = "page"
-    st.rerun()
 
 def back_to_menu():
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
-    st.rerun()
+
 
 def hide_sidebar():
     st.markdown("""
@@ -982,5 +981,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
