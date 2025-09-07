@@ -293,13 +293,15 @@ if st.session_state.nav_mode == "menu":
             },
         )
 
-        # Evita navegar automáticamente en el primer render
+        # Navegación inmediata al cambiar de opción (sin botón)
         if st.session_state.menu_last is None:
+            # Primer render: solo guarda la opción, NO navegar
             st.session_state.menu_last = choice
+        else:
+            # Si el usuario cambió la opción del menú, navega a la página
+            if choice != st.session_state.menu_last:
+                set_page(choice)
 
-        # Navega solo si el usuario lo pide o cambió de opción después
-        if abrir or (choice != st.session_state.menu_last):
-            set_page(choice)
 
 
 # Página activa y App Bar
@@ -980,6 +982,5 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
-
 
 
