@@ -293,9 +293,6 @@ if st.session_state.nav_mode == "menu":
             },
         )
 
-        # Acción explícita de abrir
-        abrir = st.button("Abrir", use_container_width=True)
-
         # Evita navegar automáticamente en el primer render
         if st.session_state.menu_last is None:
             st.session_state.menu_last = choice
@@ -983,5 +980,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
