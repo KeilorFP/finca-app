@@ -32,6 +32,8 @@ from database import (
     get_jornadas_between, get_insumos_between,
     crear_cierre_mensual, listar_cierres, leer_cierre_detalle,
     delete_trabajador_by_fullname, delete_finca,
+    # planificador
+    create_plan_table, add_plan, list_plans, get_plan, mark_plan_done_and_autorenew, postpone_plan,
 )
 
 # =============================
@@ -108,7 +110,8 @@ try:
     create_tarifas_table()
     create_cierres_tables()
     ensure_cierres_schema()
-    create_fincas_table()  # ← NUEVO
+    create_fincas_table()
+    create_plan_table()
 except Exception as e:
     st.error(f"Error creando/migrando tablas: {e}")
     st.stop()
@@ -177,6 +180,7 @@ def back_to_menu():
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
     st.session_state.menu_last = None  
+    st.rerun()
 
 
 def hide_sidebar():
@@ -239,15 +243,16 @@ if st.session_state.nav_mode == "menu":
 
         opciones_avanzadas = [
             "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
-            "Ver Registros","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
+            "Ver Registros","Planificador","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
             "Añadir Finca","Añadir Empleado","Tarifas"
         ]
         iconos_avanzados = ["calendar-check","fuel-pump","bezier","gem","droplet",
-                            "journal-text","bar-chart","archive",
+                            "journal-text","calendar-week","bar-chart","archive",
                             "map","person-plus","cash"]
 
-        opciones_simples = ["Registrar Jornada","Ver Registros","Añadir Finca","Añadir Empleado","Tarifas"]
-        iconos_simples   = ["calendar-check","journal-text","map","person-plus","cash"]
+        opciones_simples = ["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
+        iconos_simples   = ["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
+
 
         # Base según modo
         opciones_base = opciones_simples if modo_simple else opciones_avanzadas
@@ -288,6 +293,230 @@ if st.session_state.nav_mode == "page":
 else:
     menu = None
 
+# ===== Planificador de labores =====
+if menu == "Planificador":
+    st.subheader("🗓️ Planificador de labores")
+
+    def rango_semana_dom_sab(d: datetime.date):
+        dias_a_dom = (d.weekday() + 1) % 7
+        dom = d - datetime.timedelta(days=dias_a_dom)
+        sab = dom + datetime.timedelta(days=6)
+        return dom, sab
+
+    vista = st.radio("Vista", ["Semana","Mes"], horizontal=True, key="plan_vista")
+    fecha_ref = st.date_input("Fecha de referencia", datetime.date.today(), key="plan_fecha_ref")
+
+    if vista == "Semana":
+        ini, fin = rango_semana_dom_sab(fecha_ref)
+    else:
+        from calendar import monthrange
+        ini = fecha_ref.replace(day=1)
+        fin = fecha_ref.replace(day=monthrange(fecha_ref.year, fecha_ref.month)[1])
+
+    st.caption(f"Rango: **{ini} → {fin}**")
+
+    # ---------- Agendar nueva labor ----------
+    with st.expander("➕ Agendar nueva labor", expanded=False):
+        FINCAS, NO_HAY_FIN = opciones_fincas()
+        if NO_HAY_FIN:
+            st.warning("Primero registra una finca en 'Añadir Finca'.")
+        else:
+            tipo = st.selectbox("Tipo", ["Jornada","Abono","Fumigación","Cal","Herbicida"])
+            fecha_plan = st.date_input("Fecha planificada", fecha_ref, key="plan_fecha")
+            lote_plan  = st.selectbox("Lote", FINCAS, key="plan_lote")
+
+            trabajador = actividad = etapa = producto = dosis = None
+            cantidad = precio_unitario = dias = horas_extra = None
+
+            if tipo == "Jornada":
+                trabajadores = get_all_trabajadores(OWNER)
+                if not trabajadores:
+                    st.info("No hay empleados aún. Agrega uno en 'Añadir Empleado'.")
+                trabajador = st.selectbox("Trabajador", trabajadores) if trabajadores else None
+                actividad  = st.selectbox("Actividad", ACTIVIDADES)
+                dias       = st.number_input("Días", min_value=0, max_value=31, step=1, value=1)
+                horas_extra= st.number_input("Horas extra", min_value=0.0, step=0.5, value=0.0)
+
+            elif tipo == "Abono":
+                etapa      = st.selectbox("Etapa", ETAPAS_ABONO)
+                producto   = st.text_input("Producto")
+                dosis      = st.text_input("Dosis (g/planta)")
+                cantidad   = st.number_input("Cantidad (sacos)", min_value=0.0, step=0.5)
+                precio_unitario = st.number_input("Precio por saco (₡)", min_value=0.0, step=100.0)
+
+            elif tipo == "Fumigación":
+                etapa      = st.text_input("Plaga/Control (ej: Roya)")
+                producto   = st.text_input("Producto")
+                dosis      = st.text_input("Dosis (por estañón)")
+                cantidad   = st.number_input("Litros", min_value=0.0, step=0.5)
+                precio_unitario = st.number_input("Precio por litro (₡)", min_value=0.0, step=100.0)
+
+            elif tipo == "Cal":
+                etapa      = st.selectbox("Tipo de cal", TIPOS_CAL)
+                producto   = "Saco 45 kg"
+                cantidad   = st.number_input("Sacos", min_value=0.0, step=0.5)
+                precio_unitario = st.number_input("Precio por saco (₡)", min_value=0.0, step=100.0)
+
+            elif tipo == "Herbicida":
+                etapa      = st.selectbox("Tipo de herbicida", TIPOS_HERBICIDA)
+                producto   = st.text_input("Producto")
+                dosis      = st.text_input("Dosis (por estañón)")
+                cantidad   = st.number_input("Litros", min_value=0.0, step=0.5)
+                precio_unitario = st.number_input("Precio por litro (₡)", min_value=0.0, step=100.0)
+
+            # ----- Recurrencia (recordatorio automático) -----
+            st.markdown("**🔁 Recordatorio automático (recurrencia)**")
+            use_recur = st.checkbox("Repetir automáticamente", value=(tipo in ["Fumigación","Herbicida"]))
+            recur_every = recur_times = None
+            if use_recur:
+                # Sugerencias por tipo (puedes ajustarlas)
+                if tipo == "Fumigación":
+                    opt = st.selectbox("Cada", ["45 días","65 días","Otro"], index=0)
+                    recur_every = 45 if opt == "45 días" else 65 if opt == "65 días" else st.number_input("Cada N días", min_value=1, max_value=365, value=60)
+                elif tipo == "Herbicida":
+                    opt = st.selectbox("Cada", ["45 días","60 días","90 días","Otro"], index=1)
+                    mapa = {"45 días":45,"60 días":60,"90 días":90}
+                    recur_every = mapa.get(opt) or st.number_input("Cada N días", min_value=1, max_value=365, value=60)
+                elif tipo == "Abono":
+                    recur_every = st.number_input("Cada N días (entre abonadas)", min_value=1, max_value=180, value=60)
+                else:
+                    recur_every = st.number_input("Cada N días", min_value=1, max_value=365, value=30)
+
+                recur_mode = st.radio("Duración", ["Ilimitado","Cantidad de repeticiones"], horizontal=True)
+                if recur_mode == "Cantidad de repeticiones":
+                    recur_times = st.number_input("Total de ocurrencias (incluye la primera)", min_value=1, max_value=50, value=4)
+                else:
+                    recur_times = None  # ilimitado
+
+            # ----- Cadena de abonadas (rápida) -----
+            if tipo == "Abono":
+                with st.expander("⚡ Generar cadena de abonadas (varias fechas)"):
+                    etapas_sel = st.multiselect("Etapas a programar", ETAPAS_ABONO, default=ETAPAS_ABONO)
+                    gap = st.number_input("Separación entre etapas (días)", min_value=1, max_value=180, value=60)
+                    producto_c = st.text_input("Producto común (opcional)", value=producto or "")
+                    if st.button("Crear cadena de abonadas"):
+                        try:
+                            for i, et in enumerate(etapas_sel):
+                                fecha_i = fecha_plan + datetime.timedelta(days=i*int(gap))
+                                add_plan(
+                                    OWNER, str(fecha_i), lote_plan, "Abono",
+                                    etapa=et, producto=producto_c or producto, dosis=dosis,
+                                    cantidad=float(cantidad or 0.0), precio_unitario=float(precio_unitario or 0.0),
+                                    recur_every_days=None, recur_times=None, recur_autorenew=False
+                                )
+                            st.success("✅ Cadena creada.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"No se pudo crear la cadena: {e}")
+
+            # Guardar plan individual
+            if st.button("Guardar plan", type="primary"):
+                try:
+                    add_plan(
+                        OWNER, str(fecha_plan), lote_plan, tipo,
+                        trabajador=trabajador, actividad=actividad,
+                        etapa=etapa, producto=producto, dosis=dosis,
+                        cantidad=float(cantidad) if cantidad is not None else None,
+                        precio_unitario=float(precio_unitario) if precio_unitario is not None else None,
+                        dias=int(dias) if dias is not None else None,
+                        horas_extra=float(horas_extra) if horas_extra is not None else None,
+                        recur_every_days=int(recur_every) if use_recur else None,
+                        recur_times=int(recur_times) if (use_recur and recur_times is not None) else None,
+                        recur_autorenew=bool(use_recur)
+                    )
+                    st.success("✅ Labor planificada.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No se pudo guardar el plan: {e}")
+
+    # ---------- Agenda (semana/mes) ----------
+    hoy = datetime.date.today()
+    planes = list_plans(OWNER, ini, fin)  # todos los estados
+    by_date = {}
+    for p in planes:
+        (pid, fec, lote, tipo, trab, act, et, prod, dos, cant, precio_u, _dias, hextra, estado,
+         every, times, autorenew) = p
+        by_date.setdefault(str(fec), []).append({
+            "id": pid, "fecha": str(fec), "lote": lote, "tipo": tipo, "trabajador": trab,
+            "actividad": act, "etapa": et, "producto": prod, "dosis": dos,
+            "cantidad": cant, "precio_u": precio_u, "dias": _dias, "hextra": hextra, "estado": estado,
+            "every": every, "times": times, "autorenew": autorenew
+        })
+
+    st.markdown("### 📅 Agenda")
+    days = []
+    cur = ini
+    while cur <= fin:
+        days.append(cur)
+        cur += datetime.timedelta(days=1)
+
+    def card_item(item):
+        atrasado = (item["estado"] == "pendiente" and datetime.date.fromisoformat(item["fecha"]) < hoy)
+        estado_icon = "🟢" if item["estado"] == "realizado" else ("🔴" if atrasado else "🟡")
+        st.write(f"{estado_icon} **{item['tipo']}** — {item['lote']}")
+        if item["tipo"] == "Jornada":
+            st.caption(f"{item['trabajador'] or '—'} • {item['actividad'] or '—'} • {item['dias'] or 1} día(s), {item['hextra'] or 0} HEX")
+        else:
+            st.caption(f"{item['producto'] or ''} • {item['etapa'] or ''} • {item['cantidad'] or 0}")
+        if item["every"]:
+            st.caption(f"🔁 cada {item['every']} días" + ("" if item["times"] in (None,0) else f" • quedan {max(0,int(item['times'])-1)}"))
+
+        cols_btn = st.columns([1,1,1])
+        with cols_btn[0]:
+            if item["estado"] != "realizado" and st.button("✔ Realizada", key=f"done_{item['id']}"):
+                try:
+                    # Crear registro real + re-agendar si aplica
+                    if item["tipo"] == "Jornada":
+                        if not item["trabajador"]:
+                            st.warning("Este plan no tiene trabajador asignado.")
+                        else:
+                            add_jornada(
+                                trabajador=item["trabajador"],
+                                fecha=item["fecha"],
+                                lote=item["lote"],
+                                actividad=item["actividad"] or "Otra",
+                                dias=int(item["dias"] or 1),
+                                horas_normales=int(item["dias"] or 1) * 6,
+                                horas_extra=float(item["hextra"] or 0.0),
+                                owner=OWNER,
+                            )
+                    else:
+                        add_insumo(
+                            item["fecha"], item["lote"], item["tipo"],
+                            item["etapa"], item["producto"] or "",
+                            item["dosis"] or "",
+                            float(item["cantidad"] or 0.0),
+                            float(item["precio_u"] or 0.0),
+                            OWNER
+                        )
+                    mark_plan_done_and_autorenew(OWNER, item["id"], OWNER)
+                    st.success("✅ Registrado y plan actualizado.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No se pudo marcar como realizada: {e}")
+        with cols_btn[1]:
+            if item["estado"] == "pendiente" and st.button("⏰ Posponer 7d", key=f"snooze7_{item['id']}"):
+                postpone_plan(OWNER, item["id"], 7); st.rerun()
+        with cols_btn[2]:
+            if item["estado"] == "pendiente" and st.button("⏰ Posponer 15d", key=f"snooze15_{item['id']}"):
+                postpone_plan(OWNER, item["id"], 15); st.rerun()
+
+    if vista == "Semana":
+        cols = st.columns(7)
+        for i, d in enumerate(days):
+            with cols[i]:
+                st.markdown(f"**{d.strftime('%a %d/%m')}**")
+                for item in by_date.get(str(d), []):
+                    card_item(item)
+    else:
+        for d in days:
+            items = by_date.get(str(d), [])
+            if not items: 
+                continue
+            st.markdown(f"**{d.strftime('%A %d/%m')}**")
+            for item in items:
+                card_item(item)
+            st.divider()
 
 # ===== Tarifas (por usuario) =====
 if menu == "Tarifas":
@@ -959,6 +1188,5 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
-
 
 
