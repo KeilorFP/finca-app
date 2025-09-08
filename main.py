@@ -38,21 +38,37 @@ from database import (
 
 # =============================
 # 🧩 Config DB (Supabase/Postgres)
-# =============================
-# Fallback: primero env, luego secrets. Requiere sslmode=require para Supabase.
-DB_URL = (
-    os.getenv("DATABASE_URL")
-    or st.secrets.get("DATABASE_URL")
-    or st.secrets.get("SUPABASE_DB_URL")
-)
+# --- DB URL robusto: env primero; secrets solo si existen ---
+def _safe_db_url():
+    # 1) Railway/Render/Docker/etc. (variables de entorno)
+    url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+    if url:
+        return url.strip()
+    # 2) Streamlit Cloud (secrets) — solo si está disponible
+    try:
+        import streamlit as st
+        url = (st.secrets.get("DATABASE_URL") or st.secrets.get("SUPABASE_DB_URL"))
+        return url.strip() if url else None
+    except Exception:
+        return None
+
+DB_URL = _safe_db_url()
 if not DB_URL:
-    st.error(
-        "No encuentro la cadena de conexión. Configura **DATABASE_URL** en *st.secrets* o variable de entorno.\n"
-        "Formato típico Supabase: `postgresql://usuario:password@HOST:5432/postgres?sslmode=require`"
-    )
-    st.stop()
+    try:
+        import streamlit as st
+        st.error(
+            "No encuentro la cadena de conexión.\n"
+            "Define **DATABASE_URL** como variable de entorno (Railway) "
+            "o en *st.secrets* (Streamlit Cloud)."
+        )
+        st.stop()
+    except Exception:
+        raise RuntimeError("Falta DATABASE_URL. Define la variable de entorno o secrets.")
+
 # Normalizamos a env para que connect_db() la use.
 os.environ["DATABASE_URL"] = DB_URL
+
+
 
 # ===== Estilos =====
 st.markdown(
@@ -94,27 +110,44 @@ ETAPAS_ABONO = ["1ra Abonada","2da Abonada","3ra Abonada","4ta Abonada"]
 TIPOS_HERBICIDA = ["Selectivo","No selectivo","Sistemico","De contacto","Otro"]
 TIPOS_CAL = ["Cal agrícola (CaCO₃)","Cal dolomita (CaCO₃·MgCO₃)","Mezcla con yeso agrícola (CaSO₄)","Cal viva (CaO)","Cal apagada (Ca(OH)₂)"]
 
-# ===== Init DB/Migraciones (con manejo de errores) =====
+# ===== Init DB/Migraciones (seguro con RLS) =====
+def _can_create_in_public() -> bool:
+    """True si el usuario actual tiene CREATE en schema public."""
+    try:
+        conn = connect_db(); cur = conn.cursor()
+        cur.execute("select has_schema_privilege(current_user,'public','create')")
+        ok = bool(cur.fetchone()[0])
+        conn.close()
+        return ok
+    except Exception:
+        return False
+
+# Permite forzar migraciones solo cuando tú lo decidas 
+RUN_MIGRATIONS = os.getenv("APP_RUN_MIGRATIONS", "0") == "1"
+
+# Warm-up conexión
 try:
-    # "Warm-up" rápido para detectar problemas de conexión temprano
     _conn = connect_db(); _conn.close()
 except Exception as e:
     st.error(f"No se pudo conectar a la base de datos: {e}")
     st.stop()
 
-try:
-    create_users_table()
-    create_trabajadores_table()
-    create_jornadas_table()
-    create_insumos_table()
-    create_tarifas_table()
-    create_cierres_tables()
-    ensure_cierres_schema()
-    create_fincas_table()
-    create_plan_table()
-except Exception as e:
-    st.error(f"Error creando/migrando tablas: {e}")
-    st.stop()
+if RUN_MIGRATIONS and _can_create_in_public():
+    try:
+        create_users_table()
+        create_trabajadores_table()
+        create_jornadas_table()
+        create_insumos_table()
+        create_tarifas_table()
+        create_cierres_tables()
+        ensure_cierres_schema()
+        create_fincas_table()
+        create_plan_table()
+        st.success("🔧 Migraciones ejecutadas (rol con permiso CREATE).")
+    except Exception as e:
+        st.error(f"Error creando/migrando tablas: {e}")
+        st.stop()
+
 
 # ===== Login =====
 def login():
@@ -1219,6 +1252,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
