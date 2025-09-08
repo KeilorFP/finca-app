@@ -148,7 +148,7 @@ if RUN_MIGRATIONS and _can_create_in_public():
 # ===== Login =====
 def login():
     st.title("☕ Finca Cafetalera - Inicio de Sesión")
-    tab = st.radio("Menú", ["Iniciar sesión","Crear cuenta"], horizontal=True)
+    tab = st.radio("Menú", ["Iniciar sesión", "Crear cuenta"], horizontal=True)
 
     if tab == "Iniciar sesión":
         st.subheader("Ingresar")
@@ -159,17 +159,19 @@ def login():
                 if verify_user(username, password):
                     st.session_state.update({
                         "logged_in": True,
-                        "user": username,
+                        "user": username.strip(),
                         "nav_mode": "menu",
                         "current_page": None,
                         "menu_last": None,
+                        "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,  # reset menú
                     })
+                    st.rerun()  # ← vuelve ya al panel
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
             except Exception as e:
                 st.error(f"Error al verificar usuario: {e}")
 
-    else:  # === Crear cuenta ===
+    else:  # Crear cuenta
         st.subheader("Crear cuenta")
         new_user = st.text_input("👤 Usuario nuevo", key="signup_user")
         new_pass = st.text_input("🔑 Contraseña", type="password", key="signup_pass")
@@ -194,22 +196,26 @@ def login():
                         "nav_mode": "menu",
                         "current_page": None,
                         "menu_last": None,
+                        "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,
                     })
+                    st.rerun()  # ← entra directo tras crear
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
+
 
 # --- Inicializa claves de sesión una sola vez ---
 _defaults = {
     "logged_in": False,
     "user": "",
-    "nav_mode": "menu",
+    "nav_mode": "menu",   # "menu" | "page"
     "current_page": None,
     "menu_last": None,
+    "menu_ui_key": 0,     # 👈 clave dinámica para resetear option_menu
 }
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
 
-# 🔑 Solo muestra el login si NO está logueado y detén la app aquí mismo
+# 🔑 Si no está logueado, mostrar login y cortar aquí
 if not st.session_state["logged_in"]:
     login()
     st.stop()
@@ -217,44 +223,27 @@ if not st.session_state["logged_in"]:
 # Ya hay usuario => sigue la app
 OWNER = st.session_state["user"]
 
-# ===== Fincas del usuario (catálogo) =====
-def opciones_fincas():
-    try:
-        fin = get_all_fincas(OWNER)
-    except Exception as e:
-        st.error(f"Error cargando fincas: {e}")
-        fin = []
-    return fin, (len(fin) == 0)
 
-# Calcula el estado ANTES de usar NO_HAY_FIN
-FINCAS, NO_HAY_FIN = opciones_fincas()
-# Mensaje si no hay fincas y está en el menú
-if NO_HAY_FIN and st.session_state.get("nav_mode") == "menu":
-    st.info("Aún no tienes fincas. Ve a **Añadir Finca** en el menú para crear la primera.")
-
-# --- Estado de navegación ---
-if "nav_mode" not in st.session_state:
-    st.session_state.nav_mode = "menu"      # "menu" | "page"
-if "current_page" not in st.session_state:
-    st.session_state.current_page = None
-if "menu_last" not in st.session_state:
-    st.session_state.menu_last = None
-
+# ===== Navegación =====
 def set_page(page: str):
     st.session_state.menu_last = page
     st.session_state.current_page = page
     st.session_state.nav_mode = "page"
 
 def back_to_menu():
+    # Volver al menú y resetear el option_menu a "Inicio"
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
     st.session_state.menu_last = None
+    st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1  # fuerza reset
+    show_sidebar()  # asegúrate que la sidebar reaparece
+    st.rerun()      # render inmediato del menú
+
 
 # ===== Control de sidebar con CSS (placeholder) =====
 _sidebar_css = st.empty()
 
 def hide_sidebar():
-    # Inyecta CSS que oculta la sidebar
     _sidebar_css.markdown(
         """
         <style>
@@ -270,11 +259,11 @@ def hide_sidebar():
     )
 
 def show_sidebar():
-    # Quita el CSS (sidebar visible)
     _sidebar_css.empty()
 
+
 def app_bar(title: str):
-    """Barra superior fija con botón 'Volver' y título; oculta la sidebar en modo página."""
+    """Barra superior con botón Volver; oculta la sidebar en modo página."""
     hide_sidebar()
     with st.container():
         st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
@@ -284,20 +273,21 @@ def app_bar(title: str):
         with c2:
             st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
         with c3:
-            pass  # espacio para acciones futuras
+            pass
 
-# ===== Header =====
+
+# ===== Header (modo menú) =====
 if st.session_state.nav_mode == "menu":
-    show_sidebar()  # <- clave para volver a mostrar la sidebar
+    show_sidebar()  # asegúrate de verla en el menú
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
 
-# ===== Sidebar =====
+# ===== Sidebar (modo menú) =====
 if st.session_state.nav_mode == "menu":
     with st.sidebar:
         st.markdown("## 🧭 Menú Principal")
 
-        # Estado (contadores)
+        # Obtén contadores como hacías antes…
         try:
             _fincas = get_all_fincas(OWNER)
         except Exception:
@@ -307,13 +297,9 @@ if st.session_state.nav_mode == "menu":
         except Exception:
             _empleados = []
 
-        has_fincas = len(_fincas) > 0
-        has_empleados = len(_empleados) > 0
-        has_basics = has_fincas and has_empleados
-
+        has_basics = (len(_fincas) > 0) and (len(_empleados) > 0)
         st.caption(f"🌱 Fincas: **{len(_fincas)}**   •   👥 Empleados: **{len(_empleados)}**")
 
-        # Modo simple
         modo_simple = st.toggle(
             "Modo simple",
             value=not has_basics,
@@ -332,11 +318,9 @@ if st.session_state.nav_mode == "menu":
         opciones_simples = ["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
         iconos_simples   = ["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
 
-        # Base según modo
         opciones_base = opciones_simples if modo_simple else opciones_avanzadas
         iconos_base   = iconos_simples   if modo_simple else iconos_avanzados
 
-        # Opción neutra al inicio para evitar auto-entrada
         opciones_ui = ["🏠 Inicio"] + opciones_base
         iconos_ui   = ["house"] + iconos_base
 
@@ -344,7 +328,7 @@ if st.session_state.nav_mode == "menu":
             None,
             opciones_ui,
             icons=iconos_ui,
-            default_index=0,                 # ← SIEMPRE inicia en "Inicio"
+            default_index=0,
             styles={
                 "container":{"padding":"0!important","background":"rgba(0,0,0,0)"},
                 "icon":{"font-size":"18px","color":"#10b981"},
@@ -353,23 +337,23 @@ if st.session_state.nav_mode == "menu":
                 "nav-link-selected":{"background":"linear-gradient(90deg,#10b981,#059669)","color":"#fff",
                                      "font-weight":"700","border":"1px solid #10b981","box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
             },
-            key="main_menu"
+            key=f"main_menu_{st.session_state.menu_ui_key}",  # 👈 clave dinámica = reset real
         )
 
-        # Navegación: si eligen algo distinto de Inicio, abre la página
         if choice == "🏠 Inicio":
-            st.session_state.menu_last = None  # menú en reposo
+            st.session_state.menu_last = None
         else:
             if st.session_state.get("menu_last") != choice:
                 st.session_state.menu_last = choice
-                set_page(choice)  # ← oculta menú y muestra la página
+                set_page(choice)  # pasa a modo página (sin rerun aquí)
 
 # ===== Página activa y App Bar =====
 if st.session_state.nav_mode == "page":
-    menu = st.session_state.get("current_page") or ""
-    app_bar(menu)   # barra superior con botón Volver y título
+    menu = st.session_state.current_page
+    app_bar(menu)  # oculta sidebar y pone el botón Volver
 else:
     menu = None
+
 
 
 # ===== Planificador de labores =====
@@ -1267,6 +1251,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
