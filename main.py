@@ -45,7 +45,6 @@ def _safe_db_url():
         return url.strip()
     # 2) Streamlit Cloud (secrets) — solo si está disponible
     try:
-        import streamlit as st
         url = (st.secrets.get("DATABASE_URL") or st.secrets.get("SUPABASE_DB_URL"))
         return url.strip() if url else None
     except Exception:
@@ -54,7 +53,6 @@ def _safe_db_url():
 DB_URL = _safe_db_url()
 if not DB_URL:
     try:
-        import streamlit as st
         st.error(
             "No encuentro la cadena de conexión.\n"
             "Define **DATABASE_URL** como variable de entorno (Railway) "
@@ -165,7 +163,7 @@ def login():
                         "menu_last": None,
                         "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,  # reset menú
                     })
-                    st.rerun()  # ← vuelve ya al panel
+                    st.rerun()  # transición inmediata
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
             except Exception as e:
@@ -198,10 +196,9 @@ def login():
                         "menu_last": None,
                         "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,
                     })
-                    st.rerun()  # ← entra directo tras crear
+                    st.rerun()  # transición inmediata
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
-
 
 # --- Inicializa claves de sesión una sola vez ---
 _defaults = {
@@ -223,22 +220,26 @@ if not st.session_state["logged_in"]:
 # Ya hay usuario => sigue la app
 OWNER = st.session_state["user"]
 
+# ===== Catálogo de fincas (helper) =====
+def opciones_fincas():
+    try:
+        fin = get_all_fincas(OWNER)
+    except Exception as e:
+        st.error(f"Error cargando fincas: {e}")
+        fin = []
+    return fin, (len(fin) == 0)
+
+# Mensaje guía si no hay fincas (solo en menú)
+if st.session_state.get("nav_mode") == "menu":
+    _f, _no = opciones_fincas()
+    if _no:
+        st.info("Aún no tienes fincas. Ve a **Añadir Finca** en el menú para crear la primera.")
 
 # ===== Navegación =====
 def set_page(page: str):
     st.session_state.menu_last = page
     st.session_state.current_page = page
     st.session_state.nav_mode = "page"
-
-def back_to_menu():
-    # Volver al menú y resetear el option_menu a "Inicio"
-    st.session_state.nav_mode = "menu"
-    st.session_state.current_page = None
-    st.session_state.menu_last = None
-    st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1  # fuerza reset
-    show_sidebar()  # asegúrate que la sidebar reaparece
-    st.rerun()      # render inmediato del menú
-
 
 # ===== Control de sidebar con CSS (placeholder) =====
 _sidebar_css = st.empty()
@@ -261,6 +262,14 @@ def hide_sidebar():
 def show_sidebar():
     _sidebar_css.empty()
 
+def back_to_menu():
+    # Volver al menú y resetear el option_menu a "Inicio"
+    st.session_state.nav_mode = "menu"
+    st.session_state.current_page = None
+    st.session_state.menu_last = None
+    st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1  # fuerza reset
+    show_sidebar()  # vuelve a mostrar sidebar
+    st.rerun()      # render inmediato del menú
 
 def app_bar(title: str):
     """Barra superior con botón Volver; oculta la sidebar en modo página."""
@@ -275,7 +284,6 @@ def app_bar(title: str):
         with c3:
             pass
 
-
 # ===== Header (modo menú) =====
 if st.session_state.nav_mode == "menu":
     show_sidebar()  # asegúrate de verla en el menú
@@ -287,7 +295,7 @@ if st.session_state.nav_mode == "menu":
     with st.sidebar:
         st.markdown("## 🧭 Menú Principal")
 
-        # Obtén contadores como hacías antes…
+        # Contadores/estado
         try:
             _fincas = get_all_fincas(OWNER)
         except Exception:
@@ -345,7 +353,7 @@ if st.session_state.nav_mode == "menu":
         else:
             if st.session_state.get("menu_last") != choice:
                 st.session_state.menu_last = choice
-                set_page(choice)  # pasa a modo página (sin rerun aquí)
+                set_page(choice)  # pasa a modo página
 
 # ===== Página activa y App Bar =====
 if st.session_state.nav_mode == "page":
@@ -1251,6 +1259,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
