@@ -204,7 +204,7 @@ def login():
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
 
-# Inicializa llaves de session_state una sola vez
+# --- Inicializa claves de sesión una sola vez ---
 _defaults = {
     "logged_in": False,
     "user": "",
@@ -215,12 +215,16 @@ _defaults = {
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
 
-# Si no está logueado, muestra login y corta la ejecución
+# Muestra login SIEMPRE; si el usuario inicia sesión, el estado cambia y esta misma ejecución sigue
+login()
+
+# Si aún no está logueado, corta aquí
 if not st.session_state["logged_in"]:
-    login()
     st.stop()
 
-OWNER = st.session_state["user"]  # <- MUY IMPORTANTE
+# Ya hay usuario
+OWNER = st.session_state["user"]
+
 
 # ===== Fincas del usuario (catálogo) =====
 def opciones_fincas():
@@ -1261,6 +1265,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
