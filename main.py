@@ -277,7 +277,10 @@ def app_bar(title: str):
         st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 5, 1])
         with c1:
-            st.button("← Volver", on_click=back_to_menu, help="Regresar al menú")
+            if st.button("☰ Menú", help="Volver al menú principal", key="btn_menu"):
+                back_to_menu()   # deja esta función SIN st.rerun() adentro
+                st.rerun()       # forzamos el refresco aquí
+
         with c2:
             st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
         with c3:
@@ -1258,6 +1261,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
