@@ -145,7 +145,6 @@ if RUN_MIGRATIONS and _can_create_in_public():
         st.error(f"Error creando/migrando tablas: {e}")
         st.stop()
 
-
 # ===== Login =====
 def login():
     st.title("☕ Finca Cafetalera - Inicio de Sesión")
@@ -165,7 +164,6 @@ def login():
                         "current_page": None,
                         "menu_last": None,
                     })
-                    # sin st.rerun(): Streamlit ya re-ejecuta
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
             except Exception as e:
@@ -197,7 +195,6 @@ def login():
                         "current_page": None,
                         "menu_last": None,
                     })
-                    # sin st.rerun()
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
 
@@ -219,8 +216,6 @@ if not st.session_state["logged_in"]:
 
 # Ya hay usuario => sigue la app
 OWNER = st.session_state["user"]
-
-
 
 # ===== Fincas del usuario (catálogo) =====
 def opciones_fincas():
@@ -253,13 +248,13 @@ def set_page(page: str):
 def back_to_menu():
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
-    st.session_state.menu_last = None  
+    st.session_state.menu_last = None
 
-# Placeholder global para inyectar/quitar el CSS que oculta la sidebar
+# ===== Control de sidebar con CSS (placeholder) =====
 _sidebar_css = st.empty()
 
 def hide_sidebar():
-    # Inyecta CSS que oculta la sidebar 
+    # Inyecta CSS que oculta la sidebar
     _sidebar_css.markdown(
         """
         <style>
@@ -275,16 +270,27 @@ def hide_sidebar():
     )
 
 def show_sidebar():
-    # Elimina el CSS que la ocultaba
+    # Quita el CSS (sidebar visible)
     _sidebar_css.empty()
 
+def app_bar(title: str):
+    """Barra superior fija con botón 'Volver' y título; oculta la sidebar en modo página."""
+    hide_sidebar()
+    with st.container():
+        st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1, 5, 1])
+        with c1:
+            st.button("← Volver", on_click=back_to_menu, help="Regresar al menú")
+        with c2:
+            st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
+        with c3:
+            pass  # espacio para acciones futuras
 
 # ===== Header =====
 if st.session_state.nav_mode == "menu":
     show_sidebar()  # <- clave para volver a mostrar la sidebar
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
-
 
 # ===== Sidebar =====
 if st.session_state.nav_mode == "menu":
@@ -326,7 +332,6 @@ if st.session_state.nav_mode == "menu":
         opciones_simples = ["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
         iconos_simples   = ["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
 
-
         # Base según modo
         opciones_base = opciones_simples if modo_simple else opciones_avanzadas
         iconos_base   = iconos_simples   if modo_simple else iconos_avanzados
@@ -359,12 +364,13 @@ if st.session_state.nav_mode == "menu":
                 st.session_state.menu_last = choice
                 set_page(choice)  # ← oculta menú y muestra la página
 
-# Página activa y App Bar
+# ===== Página activa y App Bar =====
 if st.session_state.nav_mode == "page":
-    menu = st.session_state.current_page
-    app_bar(menu)   # ← barra superior con botón Volver y título
+    menu = st.session_state.get("current_page") or ""
+    app_bar(menu)   # barra superior con botón Volver y título
 else:
     menu = None
+
 
 # ===== Planificador de labores =====
 if menu == "Planificador":
@@ -1261,6 +1267,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
