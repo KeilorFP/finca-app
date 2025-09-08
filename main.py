@@ -235,6 +235,7 @@ if st.session_state.get("nav_mode") == "menu":
     if _no:
         st.info("Aún no tienes fincas. Ve a **Añadir Finca** en el menú para crear la primera.")
 
+
 # ===== Navegación =====
 def set_page(page: str):
     st.session_state.menu_last = page
@@ -278,8 +279,14 @@ def app_bar(title: str):
         c1, c2, c3 = st.columns([1, 5, 1])
         with c1:
             if st.button("☰ Menú", help="Volver al menú principal", key="btn_menu"):
-                back_to_menu()   # deja esta función SIN st.rerun() adentro
-                st.rerun()       # forzamos el refresco aquí
+                st.session_state.update({
+                    "nav_mode": "menu",
+                    "current_page": None,
+                    "menu_last": None,
+                    "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,
+                })
+                show_sidebar()   # quita el CSS que ocultaba la sidebar
+                st.rerun()       # forzamos el refresco
 
         with c2:
             st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
@@ -291,6 +298,27 @@ if st.session_state.nav_mode == "menu":
     show_sidebar()  # asegúrate de verla en el menú
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
+
+# 👇 Menú también en el cuerpo (útil en móvil)
+opciones_ui = ["🏠 Inicio"] + (["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
+                               if st.session_state.get("modo_simple", None) or True  # usa tu lógica si quieres
+                               else ["Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
+                                     "Ver Registros","Planificador","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
+                                     "Añadir Finca","Añadir Empleado","Tarifas"])
+iconos_ui = ["house"] + (["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
+                         if True else
+                         ["calendar-check","fuel-pump","bezier","gem","droplet",
+                          "journal-text","calendar-week","bar-chart","archive","map","person-plus","cash"])
+
+choice_body = option_menu(
+    "Menú Principal", opciones_ui, icons=iconos_ui, default_index=0,
+    styles={ "container":{"padding":"0!important","background":"rgba(0,0,0,0)"} },
+    key=f"main_menu_body_{st.session_state.menu_ui_key}",
+)
+if choice_body != "🏠 Inicio" and st.session_state.get("menu_last") != choice_body:
+    set_page(choice_body)
+    st.rerun()
+
 
 # ===== Sidebar (modo menú) =====
 if st.session_state.nav_mode == "menu":
@@ -1261,6 +1289,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
