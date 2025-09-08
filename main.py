@@ -255,36 +255,36 @@ def back_to_menu():
     st.session_state.current_page = None
     st.session_state.menu_last = None  
 
+# Placeholder global para inyectar/quitar el CSS que oculta la sidebar
+_sidebar_css = st.empty()
 
 def hide_sidebar():
-    st.markdown("""
-    <style>
-      [data-testid="stSidebar"] { display: none; }
-      .block-container { padding-left: 1rem; } /* margen cuando no hay sidebar */
-      .appbar { position: sticky; top: 0; z-index: 999; padding: .6rem .8rem;
-                background: #0b1220cc; backdrop-filter: blur(8px);
-                border-bottom: 1px solid #0f2233; border-radius: 0 0 12px 12px; }
-      .appbar .title { font-weight: 700; color: #e5f5ee; }
-    </style>
-    """, unsafe_allow_html=True)
+    # Inyecta CSS que oculta la sidebar 
+    _sidebar_css.markdown(
+        """
+        <style>
+          [data-testid="stSidebar"] { display: none !important; }
+          .block-container { padding-left: 1rem; }
+          .appbar { position: sticky; top: 0; z-index: 999; padding: .6rem .8rem;
+                    background: #0b1220cc; backdrop-filter: blur(8px);
+                    border-bottom: 1px solid #0f2233; border-radius: 0 0 12px 12px; }
+          .appbar .title { font-weight: 700; color: #e5f5ee; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
-def app_bar(title: str):
-    hide_sidebar()
-    with st.container():
-        st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1, 5, 1])
-        with c1:
-            st.button("← Volver", on_click=back_to_menu, help="Regresar al menú")
-        with c2:
-            st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
-        with c3:
-            pass  # espacio para acciones futuras (filtros, ayuda, etc.)
+def show_sidebar():
+    # Elimina el CSS que la ocultaba
+    _sidebar_css.empty()
 
 
 # ===== Header =====
 if st.session_state.nav_mode == "menu":
+    show_sidebar()  # <- clave para volver a mostrar la sidebar
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
+
 
 # ===== Sidebar =====
 if st.session_state.nav_mode == "menu":
@@ -1261,6 +1261,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
