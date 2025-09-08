@@ -33,6 +33,11 @@ def connect_db():
             safe_url = "postgresql://postgres:***@<host>:<port>/<db>"
         raise RuntimeError(f"No pude conectar a Postgres con DSN={safe_url}. Detalle: {e}")
 
+def _set_owner(cur, owner: str | None):
+    """Fija una variable de sesión para que las políticas RLS la lean."""
+    if owner:
+        cur.execute("SET LOCAL app.owner = %s;", (owner,))
+
 # -----------------
 # Tablas / Migración
 # -----------------
@@ -1046,6 +1051,7 @@ def postpone_plan(owner, plan_id, days):
                 (str(int(days)), owner, plan_id))
     conn.commit(); conn.close()
     return True
+
 
 
 
