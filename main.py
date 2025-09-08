@@ -278,6 +278,11 @@ def _menu_opciones_y_iconos(owner: str):
     iconos_ui   = ["house"] + iconos_base
     return opciones_ui, iconos_ui
 
+def _rerun():
+    rr = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
+    if rr:
+        rr()
+
 def _render_menu(opciones_ui, iconos_ui, key_suffix: str = "modal"):
     from streamlit_option_menu import option_menu
     choice = option_menu(
@@ -297,8 +302,12 @@ def _render_menu(opciones_ui, iconos_ui, key_suffix: str = "modal"):
         key=f"opt_menu_{key_suffix}_{st.session_state.get('menu_ui_key',0)}",
     )
     if choice != "🏠 Inicio":
+        # Cierra cualquier overlay/modal y evita reabrirlo al volver
+        st.session_state["__menu_fallback__"] = False
+        st.session_state["open_menu_on_home"] = False
         set_page(choice)
-        st.rerun()
+        _rerun()
+
 
 def show_menu_dialog():
     """
@@ -365,6 +374,33 @@ if st.session_state.nav_mode == "menu":
     show_sidebar()  # asegúrate de verla en el menú
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
+
+# ===== Fallback del menú modal (solo cuando estás en INICIO) =====
+if st.session_state.get("nav_mode") == "menu" and st.session_state.get("__menu_fallback__"):
+    st.markdown(
+        """
+        <style>
+        .menu-fallback-overlay { position: fixed; inset: 0; z-index: 1000;
+                                 background: rgba(0,0,0,.55); display:flex; justify-content:flex-start; }
+        .menu-fallback-panel { width: min(86vw, 380px); background:#111827; padding: 16px;
+                               border-right:1px solid #374151; overflow-y:auto; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    with st.container():
+        st.markdown('<div class="menu-fallback-overlay"><div class="menu-fallback-panel">', unsafe_allow_html=True)
+        c1, c2 = st.columns([1,4])
+        with c1:
+            if st.button("✕", key="btn_close_fallback"):
+                st.session_state["__menu_fallback__"] = False
+                _rerun()
+        with c2:
+            st.markdown("### 🧭 Menú")
+
+        opciones_ui, iconos_ui = _menu_opciones_y_iconos(st.session_state["user"])
+        _render_menu(opciones_ui, iconos_ui, key_suffix="fb")  # navega y hace _rerun()
+        st.markdown('</div></div>', unsafe_allow_html=True)
 
 # ===== Sidebar (modo menú) =====
 if st.session_state.nav_mode == "menu":
@@ -1339,6 +1375,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
