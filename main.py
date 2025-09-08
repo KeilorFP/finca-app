@@ -242,6 +242,77 @@ def set_page(page: str):
     st.session_state.current_page = page
     st.session_state.nav_mode = "page"
 
+
+def _menu_opciones_y_iconos(owner: str):
+    # Reutiliza tu misma lógica del sidebar para decidir "simple" vs "avanzado"
+    try:
+        _fincas = get_all_fincas(owner)
+    except Exception:
+        _fincas = []
+    try:
+        _empleados = get_all_trabajadores(owner)
+    except Exception:
+        _empleados = []
+
+    has_basics = (len(_fincas) > 0) and (len(_empleados) > 0)
+
+    opciones_avanzadas = [
+        "Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
+        "Ver Registros","Planificador","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
+        "Añadir Finca","Añadir Empleado","Tarifas"
+    ]
+    iconos_avanzados = ["calendar-check","fuel-pump","bezier","gem","droplet",
+                        "journal-text","calendar-week","bar-chart","archive",
+                        "map","person-plus","cash"]
+
+    opciones_simples = ["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
+    iconos_simples   = ["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
+
+    opciones_base = opciones_simples if not has_basics else opciones_avanzadas
+    iconos_base   = iconos_simples   if not has_basics else iconos_avanzados
+
+    opciones_ui = ["🏠 Inicio"] + opciones_base
+    iconos_ui   = ["house"] + iconos_base
+    return opciones_ui, iconos_ui
+
+def _render_menu(opciones_ui, iconos_ui, key_suffix: str = "modal"):
+    from streamlit_option_menu import option_menu
+    choice = option_menu(
+        "Menú Principal",
+        opciones_ui,
+        icons=iconos_ui,
+        default_index=0,
+        styles={
+            "container":{"padding":"0.25rem","background":"rgba(0,0,0,0)"},
+            "icon":{"font-size":"18px","color":"#10b981"},
+            "nav-link":{"font-size":"16px","padding":"10px 12px","border-radius":"12px","margin":"6px 0",
+                        "color":"#e5e7eb","background-color":"#111827","border":"1px solid #374151"},
+            "nav-link-selected":{"background":"linear-gradient(90deg,#10b981,#059669)","color":"#fff",
+                                 "font-weight":"700","border":"1px solid #10b981",
+                                 "box-shadow":"0 4px 18px rgba(16,185,129,.25)"},
+        },
+        key=f"opt_menu_{key_suffix}_{st.session_state.get('menu_ui_key',0)}",
+    )
+    if choice != "🏠 Inicio":
+        set_page(choice)
+        st.rerun()
+
+def show_menu_dialog():
+    """
+    Abre un modal con el mismo menú del sidebar.
+    En móvil se ve como un 'drawer' y no depende de la sidebar.
+    """
+    opciones_ui, iconos_ui = _menu_opciones_y_iconos(st.session_state["user"])
+    try:
+        # Streamlit 1.30+ (dialog estable)
+        @st.dialog("🧭 Menú", width="large")
+        def _dlg():
+            _render_menu(opciones_ui, iconos_ui, key_suffix="dlg")
+        _dlg()
+    except Exception:
+        # Fallback para versiones antiguas: muestra un bloque a pantalla completa
+        st.session_state["__menu_fallback__"] = True
+
 # ===== Control de sidebar con CSS (placeholder) =====
 _sidebar_css = st.empty()
 
@@ -272,26 +343,18 @@ def back_to_menu():
 
 
 def app_bar(title: str):
-    """Barra superior con botón Volver; oculta la sidebar en modo página."""
     hide_sidebar()
     with st.container():
         st.markdown('<div class="appbar"></div>', unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 5, 1])
         with c1:
-            if st.button("☰ Menú", help="Volver al menú principal", key="btn_menu"):
-                st.session_state.update({
-                    "nav_mode": "menu",
-                    "current_page": None,
-                    "menu_last": None,
-                    "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,
-                })
-                show_sidebar()   # quita el CSS que ocultaba la sidebar
-                st.rerun()       # forzamos el refresco
-
+            if st.button("☰ Menú", help="Abrir menú", key="btn_menu"):
+                show_menu_dialog()   # 👈 abre el menú modal (defínelo abajo)
         with c2:
             st.markdown(f'<div class="title">{title}</div>', unsafe_allow_html=True)
         with c3:
             pass
+
 
 # ===== Header (modo menú) =====
 if st.session_state.nav_mode == "menu":
@@ -1268,6 +1331,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
