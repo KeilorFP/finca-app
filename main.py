@@ -433,17 +433,15 @@ if st.session_state.nav_mode == "menu":
                 set_page(choice)  # pasa a modo página
 
 # ===== Página activa y App Bar =====
+menu = None
 if st.session_state.nav_mode == "page":
     menu = st.session_state.current_page
-    app_bar(menu)  # oculta sidebar y pone el botón Volver
-    # 👇 Abre el menú modal automáticamente al entrar a Inicio (solo una vez)
-if st.session_state.get("open_menu_on_home", False):
-    show_menu_dialog()
-    st.session_state.open_menu_on_home = False
-
+    app_bar(menu)  # oculta sidebar y pone el botón Menú
 else:
-    menu = None
-
+    # Estamos en modo menú (Inicio)
+    if st.session_state.get("open_menu_on_home", False):
+        show_menu_dialog()
+        st.session_state.open_menu_on_home = False
 
 
 # ===== Planificador de labores =====
@@ -1341,6 +1339,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
