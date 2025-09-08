@@ -38,7 +38,6 @@ from database import (
 
 # =============================
 # 🧩 Config DB (Supabase/Postgres)
-# --- DB URL robusto: env primero; secrets solo si existen ---
 def _safe_db_url():
     # 1) Railway/Render/Docker/etc. (variables de entorno)
     url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
@@ -67,8 +66,6 @@ if not DB_URL:
 
 # Normalizamos a env para que connect_db() la use.
 os.environ["DATABASE_URL"] = DB_URL
-
-
 
 # ===== Estilos =====
 st.markdown(
@@ -204,7 +201,6 @@ def login():
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
 
-
 # --- Inicializa claves de sesión una sola vez ---
 _defaults = {
     "logged_in": False,
@@ -216,15 +212,14 @@ _defaults = {
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
 
-# Muestra login SIEMPRE; si el usuario inicia sesión, el estado cambia y esta misma ejecución sigue
-login()
-
-# Si aún no está logueado, corta aquí
+# 🔑 Solo muestra el login si NO está logueado y detén la app aquí mismo
 if not st.session_state["logged_in"]:
+    login()
     st.stop()
 
-# Ya hay usuario
+# Ya hay usuario => sigue la app
 OWNER = st.session_state["user"]
+
 
 
 # ===== Fincas del usuario (catálogo) =====
@@ -1266,6 +1261,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
