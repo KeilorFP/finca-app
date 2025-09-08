@@ -299,27 +299,6 @@ if st.session_state.nav_mode == "menu":
     st.title("📋 Panel de Control - Finca Cafetalera")
     st.write(f"👤 Usuario: **{OWNER}**")
 
-# 👇 Menú también en el cuerpo (útil en móvil)
-opciones_ui = ["🏠 Inicio"] + (["Registrar Jornada","Ver Registros","Planificador","Añadir Finca","Añadir Empleado","Tarifas"]
-                               if st.session_state.get("modo_simple", None) or True  # usa tu lógica si quieres
-                               else ["Registrar Jornada","Registrar Abono","Registrar Fumigación","Registrar Cal","Registrar Herbicida",
-                                     "Ver Registros","Planificador","Reporte Semanal (Dom–Sáb)","Cierre Mensual",
-                                     "Añadir Finca","Añadir Empleado","Tarifas"])
-iconos_ui = ["house"] + (["calendar-check","journal-text","calendar-week","map","person-plus","cash"]
-                         if True else
-                         ["calendar-check","fuel-pump","bezier","gem","droplet",
-                          "journal-text","calendar-week","bar-chart","archive","map","person-plus","cash"])
-
-choice_body = option_menu(
-    "Menú Principal", opciones_ui, icons=iconos_ui, default_index=0,
-    styles={ "container":{"padding":"0!important","background":"rgba(0,0,0,0)"} },
-    key=f"main_menu_body_{st.session_state.menu_ui_key}",
-)
-if choice_body != "🏠 Inicio" and st.session_state.get("menu_last") != choice_body:
-    set_page(choice_body)
-    st.rerun()
-
-
 # ===== Sidebar (modo menú) =====
 if st.session_state.nav_mode == "menu":
     with st.sidebar:
@@ -1289,6 +1268,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
