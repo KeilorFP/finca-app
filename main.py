@@ -182,7 +182,6 @@ def login():
 
         if st.button("Crear cuenta", type="primary"):
             try:
-                # Validaciones mínimas
                 if not new_user.strip() or not new_pass:
                     st.warning("Completa usuario y contraseña.")
                 elif len(new_user.strip()) < 3:
@@ -192,10 +191,8 @@ def login():
                 elif new_pass != new_pass2:
                     st.warning("Las contraseñas no coinciden.")
                 else:
-                    # Crea el usuario (assume add_user maneja hashing/unique)
                     add_user(new_user.strip(), new_pass)
                     st.success("✅ Cuenta creada. ¡Ya puedes iniciar sesión!")
-                    # Opcional: iniciar sesión automáticamente
                     st.session_state.update({
                         "logged_in": True,
                         "user": new_user.strip(),
@@ -205,11 +202,25 @@ def login():
                     })
                     st.rerun()
             except Exception as e:
-                # Suele capturar 'usuario ya existe' u otros errores de BD
                 st.error(f"No se pudo crear la cuenta: {e}")
 
+# Inicializa llaves de session_state una sola vez
+_defaults = {
+    "logged_in": False,
+    "user": "",
+    "nav_mode": "menu",
+    "current_page": None,
+    "menu_last": None,
+}
+for k, v in _defaults.items():
+    st.session_state.setdefault(k, v)
 
-OWNER = st.session_state.user  # <- MUY IMPORTANTE
+# Si no está logueado, muestra login y corta la ejecución
+if not st.session_state["logged_in"]:
+    login()
+    st.stop()
+
+OWNER = st.session_state["user"]  # <- MUY IMPORTANTE
 
 # ===== Fincas del usuario (catálogo) =====
 def opciones_fincas():
@@ -1252,6 +1263,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
