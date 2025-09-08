@@ -263,13 +263,12 @@ def show_sidebar():
     _sidebar_css.empty()
 
 def back_to_menu():
-    # Volver al menú y resetear el option_menu a "Inicio"
     st.session_state.nav_mode = "menu"
     st.session_state.current_page = None
     st.session_state.menu_last = None
-    st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1  # fuerza reset
-    show_sidebar()  # vuelve a mostrar sidebar
-    st.rerun()      # render inmediato del menú
+    st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1
+    show_sidebar()  # opcional
+
 
 def app_bar(title: str):
     """Barra superior con botón Volver; oculta la sidebar en modo página."""
@@ -1259,6 +1258,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
