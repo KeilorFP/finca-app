@@ -168,7 +168,7 @@ def login():
                         "current_page": None,
                         "menu_last": None,
                     })
-                    st.rerun()
+                    # sin st.rerun(): Streamlit ya re-ejecuta
                 else:
                     st.error("❌ Usuario o contraseña incorrectos")
             except Exception as e:
@@ -200,9 +200,10 @@ def login():
                         "current_page": None,
                         "menu_last": None,
                     })
-                    st.rerun()
+                    # sin st.rerun()
             except Exception as e:
                 st.error(f"No se pudo crear la cuenta: {e}")
+
 
 # --- Inicializa claves de sesión una sola vez ---
 _defaults = {
@@ -1265,6 +1266,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
