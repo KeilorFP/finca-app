@@ -120,6 +120,7 @@ except Exception as e:
 def login():
     st.title("☕ Finca Cafetalera - Inicio de Sesión")
     tab = st.radio("Menú", ["Iniciar sesión","Crear cuenta"], horizontal=True)
+
     if tab == "Iniciar sesión":
         st.subheader("Ingresar")
         username = st.text_input("👤 Usuario")
@@ -130,7 +131,7 @@ def login():
                     st.session_state.update({
                         "logged_in": True,
                         "user": username,
-                        "nav_mode": "menu",      # ← abre el menú
+                        "nav_mode": "menu",
                         "current_page": None,
                         "menu_last": None,
                     })
@@ -140,10 +141,40 @@ def login():
             except Exception as e:
                 st.error(f"Error al verificar usuario: {e}")
 
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
-if "user" not in st.session_state: st.session_state.user = ""
-if not st.session_state.logged_in:
-    login(); st.stop()
+    else:  # === Crear cuenta ===
+        st.subheader("Crear cuenta")
+        new_user = st.text_input("👤 Usuario nuevo", key="signup_user")
+        new_pass = st.text_input("🔑 Contraseña", type="password", key="signup_pass")
+        new_pass2 = st.text_input("🔑 Confirmar contraseña", type="password", key="signup_pass2")
+
+        if st.button("Crear cuenta", type="primary"):
+            try:
+                # Validaciones mínimas
+                if not new_user.strip() or not new_pass:
+                    st.warning("Completa usuario y contraseña.")
+                elif len(new_user.strip()) < 3:
+                    st.warning("El usuario debe tener al menos 3 caracteres.")
+                elif len(new_pass) < 6:
+                    st.warning("La contraseña debe tener al menos 6 caracteres.")
+                elif new_pass != new_pass2:
+                    st.warning("Las contraseñas no coinciden.")
+                else:
+                    # Crea el usuario (assume add_user maneja hashing/unique)
+                    add_user(new_user.strip(), new_pass)
+                    st.success("✅ Cuenta creada. ¡Ya puedes iniciar sesión!")
+                    # Opcional: iniciar sesión automáticamente
+                    st.session_state.update({
+                        "logged_in": True,
+                        "user": new_user.strip(),
+                        "nav_mode": "menu",
+                        "current_page": None,
+                        "menu_last": None,
+                    })
+                    st.rerun()
+            except Exception as e:
+                # Suele capturar 'usuario ya existe' u otros errores de BD
+                st.error(f"No se pudo crear la cuenta: {e}")
+
 
 OWNER = st.session_state.user  # <- MUY IMPORTANTE
 
@@ -1188,5 +1219,6 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
