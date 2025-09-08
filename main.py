@@ -162,6 +162,7 @@ def login():
                         "current_page": None,
                         "menu_last": None,
                         "menu_ui_key": st.session_state.get("menu_ui_key", 0) + 1,  # reset menú
+                        "open_menu_on_home": True, 
                     })
                     st.rerun()  # transición inmediata
                 else:
@@ -204,11 +205,13 @@ def login():
 _defaults = {
     "logged_in": False,
     "user": "",
-    "nav_mode": "menu",   # "menu" | "page"
+    "nav_mode": "menu",
     "current_page": None,
     "menu_last": None,
-    "menu_ui_key": 0,     # 👈 clave dinámica para resetear option_menu
+    "menu_ui_key": 0,
+    "open_menu_on_home": True,   
 }
+
 for k, v in _defaults.items():
     st.session_state.setdefault(k, v)
 
@@ -339,6 +342,7 @@ def back_to_menu():
     st.session_state.current_page = None
     st.session_state.menu_last = None
     st.session_state.menu_ui_key = st.session_state.get("menu_ui_key", 0) + 1
+    st.session_state.open_menu_on_home = True 
     show_sidebar()  # opcional
 
 
@@ -422,6 +426,7 @@ if st.session_state.nav_mode == "menu":
 
         if choice == "🏠 Inicio":
             st.session_state.menu_last = None
+            st.session_state.open_menu_on_home = True
         else:
             if st.session_state.get("menu_last") != choice:
                 st.session_state.menu_last = choice
@@ -431,6 +436,11 @@ if st.session_state.nav_mode == "menu":
 if st.session_state.nav_mode == "page":
     menu = st.session_state.current_page
     app_bar(menu)  # oculta sidebar y pone el botón Volver
+    # 👇 Abre el menú modal automáticamente al entrar a Inicio (solo una vez)
+if st.session_state.get("open_menu_on_home", False):
+    show_menu_dialog()
+    st.session_state.open_menu_on_home = False
+
 else:
     menu = None
 
@@ -1331,6 +1341,7 @@ if menu == "Reporte Semanal (Dom–Sáb)":
     
         
     
+
 
 
 
