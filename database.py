@@ -1063,14 +1063,4 @@ def postpone_plan(owner, plan_id, days):
     conn.commit(); conn.close()
     return True
 
-UPDATE insumos SET tipo='Abono'
-WHERE lower(trim(tipo)) IN ('abono','abonado');
 
-UPDATE insumos SET tipo='Fumigación'
-WHERE lower(trim(tipo)) IN ('fumigación','fumigacion');
-
-UPDATE insumos SET tipo='Herbicida'
-WHERE lower(trim(tipo)) IN ('herbicida','herbiciar');
-
-UPDATE insumos SET tipo='Cal'
-WHERE lower(trim(tipo)) IN ('cal','encalado');
